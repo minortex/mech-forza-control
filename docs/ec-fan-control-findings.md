@@ -35,9 +35,9 @@
 
 ### 读写格式
 
-输入缓冲区: `struct('<II', ec_addr, byte_value)`
+输入缓冲区：`struct('<II', ec_addr, byte_value)`
 
-EC 读输出: 4 字节 int，低字节为 EC 值。
+EC 读输出：4 字节 int，低字节为 EC 值。
 
 ## 转速 RPM 读取与换算
 
@@ -77,7 +77,7 @@ EC[1131]=45, EC[1132]=11  => 11*256+45 = 2861 RPM（副风扇）
 
 ## 占空比 Duty 与百分比换算
 
-### 地址（读写，但 BIOS 持续覆盖）
+### 地址（只读）
 
 | 常量名 | 地址 | 含义 |
 |--------|------|------|
@@ -109,10 +109,6 @@ duty_byte = 百分比 * 2
 
 规律：`Speed{N}` 的 duty_byte = N * 2。
 
-### 1883/1884 的行为
-
-这两个地址是 EC 当前输出的 Duty 值。直接写入可以短暂改变风扇转速，但 BIOS 的温控循环会持续覆盖。要实现持久控制，需要先通过控制字节 1873 接管风扇模式并修改风扇表。
-
 ## 控制字节 1873（MyFanCTLByteFlag）
 
 这是风扇控制的核心开关。`ECSpec.cs` 中定义了 `MyFanCTLByteFlag` 枚举：
@@ -127,6 +123,9 @@ duty_byte = 百分比 * 2
 | `User_Fan_Level2` | 130 | 10000010 | 用户档位 2（User_Fan_Mode + Bit1） |
 | `User_Fan_Level3` | 131 | 10000011 | 用户档位 3（User_Fan_Mode + Bit1 + Bit0） |
 
+
+实际上风扇用户模式根本不生效，为 0 只要在 custom 的电源计划，就会遵守风扇表。
+
 ### 位定义
 
 | Bit | 掩码 | 含义 |
@@ -136,6 +135,12 @@ duty_byte = 百分比 * 2
 | 4 | 0x10 | Turbo 模式 |
 | 6 | 0x40 | FanBoost 模式 |
 | 7 | 0x80 | 用户自定义模式 |
+
+### 叠加逻辑与发现
+
+控制字节 `EC[1873]` 支持多状态的二进制位叠加（按位或 / 异或关系）：
+- 当系统处于 `Turbo` 模式（值为 `16` 即 `00010000`）时，若对其写入 `64`（强冷模式 `01000000`），读取出来的最终状态值会是 **`80`** (`01010000`)。
+- 这证明了 EC 内部是用位标志来控制不同的工作模式，而并非简单的模式互斥，修改时若只想叠加特定模式，需要结合位掩码进行读写。
 
 ### 实测验证
 
@@ -163,8 +168,8 @@ duty_byte = 百分比 * 2
 
 向 `EC[1895]` 写入 `FanBoost_Trigger` (4) 可以在系统层面开关风扇 Boost，但该方法并不稳定：
 - 写入 `4` 属于 Toggle 逻辑（开与关循环切换）。
-- 如果写入频率过快或时间间隔不对，极易触发 EC 状态机异常，导致风扇占空比直接退回到默认的 50 或 0。
 - 此外，此触发方式还会产生系统级的强冷 OSD 提示弹窗。
+
 
 ## 其他相关地址
 
@@ -181,10 +186,6 @@ duty_byte = 百分比 * 2
 
 每级 1 字节，Duty 范围 0-200（0-100%）。
 
-#### 特殊厂商设计：第二点锁定机制
-厂商在设计此风扇曲线时，存在一个关键特点：**只有第二个点（即 `EC[3873]`）是生效的，无论 CPU 温度是多少度，风扇占空比永远定格在第二个点对应的 Duty 上。**
-因此，只需改写 `EC[3873]` 的值即可控制 CPU 风扇的固定输出。
-
 ## 已验证的事实
 
 1. MQTT `Fan/Control` 只能切换模式，不能直接控制风扇 Duty。
@@ -192,41 +193,103 @@ duty_byte = 百分比 * 2
 3. `FanBoostBtnSupport=false`，MQTT FanBoost 不可用。
 4. 改磁盘 JSON + 重启服务不能改变风扇行为。
 5. 直接写 EC 控制字节 1873 = 240/255 可触发 FanBoost 并加速风扇。
-6. EC 风扇表 3872-3887 可写入，生效行为存在“迟滞/单向触发”特征：
-   - **从高占空比调到低占空比**：系统能自己慢慢检测并降下来，不需要对 1873 寄存器强冷触发。
-   - **从低占空比调到高占空比**：直接写入表不生效。必须对 `1873` (MyFanCTLByteFlag) 反复交替写入强冷模式 `64` 和自动模式 `0` （即 `64 -> 0 -> 64 -> 0` 序列），且动作之间必须保持约 **1.0 秒**的固定时间间隔，才能使 EC 成功重新载入表中的更高占空比。
-7. **更加稳定可靠的触发重载机制**：
-   当修改 `EC[3873]` 占空比后，直接对控制字节 `EC[1873]` 写入 `64 -> 0 -> 64 -> 0` 的交替触发逻辑（每步间隔 1.0 秒）。该方案比向 `EC[1895]` 写入 `4` 稳定得多，能 100% 保证新 Duty 在 `EC[1883]` 上生效，且由于避开了系统的 Boost Toggle 逻辑，不会弹出 OSD 强冷弹窗，也不会因为状态机重置导致 Duty 回退到 BIOS 默认值。
-8. Duty 值范围 0-200（对应 0-100%），非 0-255。实际输出 Duty 通常可能会比风扇表写入的值少 1（例如表写入 100，实际 1883/1884 输出为 99）。
-9. 转速 RPM 由两个相邻 EC 字节按 big-endian 拼接：`RPM = HIGH * 256 + LOW`。
+6. **更加稳定可靠的触发重载机制**：
+7. Duty 值范围 0-200（对应 0-100%），非 0-255。实际输出 Duty 通常可能会比风扇表写入的值少 1（例如表写入 100，实际 1883/1884 输出为 99）。
+8. 转速 RPM 由两个相邻 EC 字节按 big-endian 拼接：`RPM = HIGH * 256 + LOW`。
    - **主风扇 (物理右侧)**：对应 `EC[1883]` 作为 Duty 控制，`EC[1124]` (H) 与 `EC[1125]` (L) 作为 RPM 读取。
    - **副风扇 (物理左侧)**：对应 `EC[1884]` 作为 Duty 控制，`EC[1132]` (H) 与 `EC[1131]` (L) 作为 RPM 读取。
-10. 当副风扇停转或低转速时，RPM 读取会出现大约 45 的底噪值（例如 Duty = 0 时转速显示 45），这属于转速计的物理噪声，并非实际转动。
+9. 当副风扇停转或低转速时，RPM 读取会出现大约 45 的底噪值（例如 Duty = 0 时转速显示 45），这属于转速计的物理噪声，并非实际转动。
+10. **恢复自动控制最安全有效的方法**：
+    由于 `GCUService` 进程常驻后台运行，因此无需手动计算恢复原本的 Duty 曲线。只需在控制中心随意切换一次模式，或者重启电脑，甚至执行切换模式脚本，`GCUService` 就会将配置好的标准风扇表重新下发，完美恢复 BIOS 的原始温控状态。
 
-## 工具脚本
 
-### tools/ec_fan.py
+## 逆向验证批注
 
-EC 风扇只读监视/读取工具，支持 read / monitor 子命令。已删除了 `setduty`、`dump` 和 `write` 函数，仅用于风扇状态的安全监视。
+以下批注对照反编译后的 GCU 程序集（
+everseCS/GCUService_decompiled/）验证原文档中的推断。
 
-```powershell
-python tools/ec_fan.py read
-python tools/ec_fan.py monitor -i 0.5
-```
+### [注 1] 控制字节 1873 — 模式映射更新
 
-### tools/fan_read.py
+原文档中 1873 的枚举定义来自 ECSpec.MyFanCTLByteFlag，值是正确的。
+但 RamFan1p5 平台实际写入的值是 MyFanManager_RamFan1p5.SetFanMode(uint mode) 决定的，
+**OperatingMode 枚举与 ECSpec 的 FAN 模式枚举不同**（Gaming/Office 互换）：
 
-读取当前 CPU 和副风扇的 Duty 和 RPM 情况。
+| OperatingMode | EC[1873] 无 FanBoost | EC[1873] 有 FanBoost |
+|--------------|---------------------|---------------------|
+| Office (0) | 160 | 224 |
+| Gaming (1) | 0 | 64 |
+| Turbo (2) | 16 | 80 |
+| Custom (3) | 0 | 64 |
 
-```powershell
-python tools/fan_read.py read
-python tools/fan_read.py monitor
-```
+额外增加的寄存器：
+- EC[1830] bit7 — Custom 模式标志（SetFanMode 最后一步写入）
+- EC[1831] bit6 — CustomerModeLight 指示灯（MyFanTableCtrl.CustomerModeLightOn/Off）
 
-### tools/fan_control.py
+### [注 2] 触发字节 1895 — 确认
 
-利用稳定的 1873 寄存器重载序列（`64 -> 0 -> 64 -> 0`，每次间隔 1.0s），实现 100% 稳定的 CPU 自定义占空比重载。
+ECSpec.cs 中的 TriggerByteFlag 枚举定义与文档一致。
+但稳定的风扇切换路径是 SetFanControlByRamFan1p5 + 风扇表写入序列，
+不是 1895 的触发方式。
 
-```powershell
-python tools/fan_control.py 35
-```
+### [注 3] Duty 换算公式 — 代码确认
+
+FanTable_Manager1p5_CML.SetEcFanTable:
+`csharp
+if (fantable.CPU[i].Duty <= 100)
+    b = fantable.CPU[i].Duty * 2;
+else
+    b = byte.MaxValue;  // 255
+`
+原文档的 百分比 x 2 公式完全正确。
+
+### [注 4] 风扇表 3840-3935 格式 — 代码确认
+
+SetEcFanTable (CML 变体) 的每条曲线写入逻辑：
+`csharp
+// CPU 曲线
+for i = 0..15:
+    EC[3840 + i] = fantable.CPU[i+1].UpT  (最后一点=0xFF)
+    if i < 15: EC[3856 + i + 1] = fantable.CPU[i].DownT
+    EC[3872 + i] = fantable.CPU[i].Duty * 2
+// GPU 曲线同理偏移到 3888/3904/3920
+`
+注意 UpT/DownT 在 bank 内部**偏移了一位**（i+1 和 i），不是简单的一一对应。
+
+### [注 5] 第二点锁定 — 未找到代码依据
+
+原文档提到"只有第二个点 EC[3873] 生效"，这**未在反编译代码中找到对应逻辑**。
+这可能是 EC 固件特性，或者是特定机型的 BIOS 行为。如果完整写入全部 16 点后风扇行为符合预期，
+说明所有点都生效，不需要特殊处理。
+
+### [注 6] 已验证事实 5-7 — 理解根本原因
+
+64 -> 0 -> 64 -> 0 序列之所以能刷新风扇 Duty，是因为这触发了：
+1. SetFanControlByRamFan1p5(false) -> EC[1990] &= ~4（AP 控制关闭）
+2. 此时写风扇表 -> EC[3840-3935]
+3. SetFanControlByRamFan1p5(true) -> EC[1990] |= 4（AP 控制恢复）
+
+这个使能/禁用切换让 EC 重载了风扇表。相当于模拟了 MyFanTableCtrl.SetFanTable() 的流程。
+
+### [注 7] 已验证事实 11 — 代码确认
+
+GCU 恢复机制：
+1. EnableByService() -> LoadProfileAll() + syncBiosSettings() + Init(true)
+2. Init(true) -> RefreshCurrentProfile(OperatingMode) + SetUserProfile(OperatingMode)
+3. SetUserProfile() -> SetFanMode() + FanTable.SetFanTable() + PL/TCC 写入
+
+所以重启 GCU 或切换模式确实能完整恢复风扇行为。
+
+### [注 8] 新发现：关键缺失寄存器
+
+原文档未涉及但实际必须的寄存器：
+
+| 地址 | 名称 | 作用 |
+|------|------|------|
+| 1857 | ADDR_AP_OEM_BYTE bit0 | **ApExistFlag** — 必须设=1，否则 BIOS 不收控制权 |
+| 1830 | ADDR_AP_OEM9 bit7 | Custom 模式标志 |
+| 1831 | ADDR_AP_OEM10 bit6 | Custom 模式指示灯 |
+| 1989 | ADDR_FANCTL_RESP bit7 | FanControlRespective（独立风扇曲线） |
+| 1926 | ADDR_L1_PWM_DEFAULT_MYFAN3 | TCC offset 控制 |
+| 1927 | ADDR_L2_PWM_DEFAULT_MYFAN3 | FanSwitchSpeed 渐变时间 |
+
+详细说明见 [ec-mode-switch.md](./ec-mode-switch.md)。
