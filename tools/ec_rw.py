@@ -1,96 +1,32 @@
-"""Low-level EC byte read / write / dump via ACPI driver."""
+#!/usr/bin/env python3
+"""Low-level EC byte read / write / dump."""
 
 import argparse
-import ctypes
-import struct
+import os
 import sys
 
-# --- Win32 constants ---
-GENERIC_READ = 0x80000000
-GENERIC_WRITE = 0x40000000
-FILE_SHARE_RW = 3
-OPEN_EXISTING = 3
-IOCTL_EC_READ = 2621482120   # 0x9C402488
-IOCTL_EC_WRITE = 2621482124  # 0x9C40248C
-DEVICE_PATH = r"\\.\ACPIDriver"
-
-kernel32 = ctypes.windll.kernel32
-
-
-# ---------- device helpers ----------
-
-def open_device():
-    h = kernel32.CreateFileW(
-        DEVICE_PATH,
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_RW,
-        None,
-        OPEN_EXISTING,
-        0,
-        None,
-    )
-    if h == -1 or h == 0xFFFFFFFFFFFFFFFF:
-        raise OSError(f"Cannot open {DEVICE_PATH}, error={ctypes.get_last_error()}")
-    return h
-
-
-def close_device(h):
-    kernel32.CloseHandle(h)
-
-
-# ---------- EC primitives ----------
-
-def ec_read(h, addr):
-    inbuf = struct.pack("<II", addr, 1)
-    out = ctypes.c_int(0)
-    ret = kernel32.DeviceIoControl(
-        h, IOCTL_EC_READ, inbuf, len(inbuf), ctypes.byref(out), 4, None, None
-    )
-    if not ret:
-        raise OSError(f"EC read failed at {addr}, error={ctypes.get_last_error()}")
-    return out.value & 0xFF
-
-
-def ec_write(h, addr, value):
-    inbuf = struct.pack("<II", addr, value & 0xFF)
-    out = ctypes.c_int(0)
-    ret = kernel32.DeviceIoControl(
-        h, IOCTL_EC_WRITE, inbuf, len(inbuf), ctypes.byref(out), 4, None, None
-    )
-    if not ret:
-        raise OSError(f"EC write failed at {addr}, error={ctypes.get_last_error()}")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import ec_io
 
 
 # ---------- commands ----------
 
 def cmd_read(args):
-    h = open_device()
-    try:
-        val = ec_read(h, args.addr)
-        print(f"EC[{args.addr}] = {val} (0x{val:02X})")
-    finally:
-        close_device(h)
+    val = ec_io.ec_read(args.addr)
+    print(f"EC[{args.addr}] = {val} (0x{val:02X})")
 
 
 def cmd_write(args):
-    h = open_device()
-    try:
-        before = ec_read(h, args.addr)
-        ec_write(h, args.addr, args.value)
-        after = ec_read(h, args.addr)
-        print(f"EC[{args.addr}] : {before} (0x{before:02X}) -> {after} (0x{after:02X})")
-    finally:
-        close_device(h)
+    before = ec_io.ec_read(args.addr)
+    ec_io.ec_write(args.addr, args.value)
+    after = ec_io.ec_read(args.addr)
+    print(f"EC[{args.addr}] : {before} (0x{before:02X}) -> {after} (0x{after:02X})")
 
 
 def cmd_dump(args):
-    h = open_device()
-    try:
-        for addr in range(args.start, args.start + args.count):
-            val = ec_read(h, addr)
-            print(f"EC[{addr:4d}] = {val:3d} (0x{val:02X})")
-    finally:
-        close_device(h)
+    for addr in range(args.start, args.start + args.count):
+        val = ec_io.ec_read(addr)
+        print(f"EC[{addr:4d}] = {val:3d} (0x{val:02X})")
 
 
 # ---------- entry ----------

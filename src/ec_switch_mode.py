@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Switch GCU power mode directly via EC on Windows (ACPIDriver).
+#!/usr/bin/env python3
+"""Switch GCU power mode directly via EC.
 
 Usage:
   python ec_switch_mode.py gaming
@@ -10,20 +11,11 @@ Usage:
 """
 
 import argparse
-import ctypes
-import struct
+import os
 import sys
 
-# --- ACPI driver ---
-GENERIC_READ  = 0x80000000
-GENERIC_WRITE = 0x40000000
-FILE_SHARE_RW = 3
-OPEN_EXISTING = 3
-IOCTL_EC_READ  = 2621482120   # 0x9C402488
-IOCTL_EC_WRITE = 2621482124   # 0x9C40248C
-DEVICE_PATH = r"\\.\ACPIDriver"
-
-kernel32 = ctypes.windll.kernel32
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import ec_io
 
 # --- Key EC addresses ---
 ADDR_MAFAN_CTL = 1873
@@ -32,7 +24,7 @@ ADDR_AP_OEM10  = 1831
 ADDR_PL1       = 1923
 ADDR_PL2       = 1924
 ADDR_PL4       = 1925
-ADDR_AP_OEM  = 1857      # 0x0741 – bit0 = ApExistFlag
+ADDR_AP_OEM  = 1857      # 0x0741 -- bit0 = ApExistFlag
 ADDR_AP_CTL    = 1990
 
 # EC 1873 values (no FanBoost)
@@ -48,6 +40,7 @@ PL_DEFAULTS = {
     "custom": (45, 45, 50),
 }
 PL_DC = (0, 0, 0)
+
 # ---- Default CPU fan curve (16-point, CML format) ----
 # From SetEcFanTable: EC[x] = upT[i+1] or 0xFF, EC[x+1] = dnT[i], EC[x+2] = duty*2
 DEFAULT_CPU_FAN = {
@@ -60,71 +53,6 @@ DEFAULT_GPU_FAN = {
     "dnT":   [ 35, 40, 45, 50, 55, 60, 63, 67, 71, 75, 78, 81, 84, 87, 90,  95],
     "duty":  [ 10, 20, 25, 30, 35, 40, 45, 50, 65, 70, 75, 80, 85, 90, 95, 100],
 }
-
-
-# ---------- EC primitives ----------
-
-def open_device():
-    h = kernel32.CreateFileW(
-        DEVICE_PATH,
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_RW,
-        None,
-        OPEN_EXISTING,
-        0,
-        None,
-    )
-    if h in (-1, 0xFFFFFFFFFFFFFFFF):
-        raise OSError(f"Cannot open {DEVICE_PATH}, error={ctypes.get_last_error()}")
-    return h
-
-
-def close_device(h):
-    kernel32.CloseHandle(h)
-
-
-def ec_read(h, addr):
-    inbuf = struct.pack("<II", addr, 1)
-    out = ctypes.c_int(0)
-    if not kernel32.DeviceIoControl(h, IOCTL_EC_READ, inbuf, len(inbuf),
-                                     ctypes.byref(out), 4, None, None):
-        raise OSError(f"EC read failed at {addr}, error={ctypes.get_last_error()}")
-    return out.value & 0xFF
-
-
-def ec_write(h, addr, value):
-    inbuf = struct.pack("<II", addr, value & 0xFF)
-    out = ctypes.c_int(0)
-    if not kernel32.DeviceIoControl(h, IOCTL_EC_WRITE, inbuf, len(inbuf),
-                                     ctypes.byref(out), 4, None, None):
-        raise OSError(f"EC write failed at {addr}, error={ctypes.get_last_error()}")
-
-
-# ---------- helpers ----------
-
-def _rmw(h, addr, set_bits=0, clear_bits=0):
-    val = ec_read(h, addr)
-    val = (val | set_bits) & ~clear_bits
-    ec_write(h, addr, val)
-    return val
-
-
-def _is_ac():
-    import ctypes.wintypes
-    # kernel32.GetSystemPowerStatus
-    class SYSTEM_POWER_STATUS(ctypes.Structure):
-        _fields_ = [
-            ("ACLineStatus", ctypes.c_ubyte),
-            ("BatteryFlag", ctypes.c_ubyte),
-            ("BatteryLifePercent", ctypes.c_ubyte),
-            ("Reserved1", ctypes.c_ubyte),
-            ("BatteryLifeTime", ctypes.c_uint),
-            ("BatteryFullLifeTime", ctypes.c_uint),
-        ]
-    sps = SYSTEM_POWER_STATUS()
-    if kernel32.GetSystemPowerStatus(ctypes.byref(sps)):
-        return sps.ACLineStatus == 1
-    return True
 
 
 # ---------- mode switch ----------
@@ -149,22 +77,22 @@ MODES = {
 }
 
 
-def _write_fan_table(h, cpu=None, gpu=None):
+def _write_fan_table(cpu=None, gpu=None):
     """Write CPU/GPU fan curve to EC 3840-3935 (SetEcFanTable CML format)."""
     cpu = cpu or DEFAULT_CPU_FAN
     gpu = gpu or DEFAULT_GPU_FAN
     for i in range(16):
-        ec_write(h, 3840 + i, cpu['upT'][i + 1] if i < 15 else 255)
+        ec_io.ec_write(3840 + i, cpu['upT'][i + 1] if i < 15 else 255)
         if i < 15:
-            ec_write(h, 3856 + i + 1, cpu['dnT'][i])
-        ec_write(h, 3872 + i, min(cpu['duty'][i], 100) * 2)
-        ec_write(h, 3888 + i, gpu['upT'][i + 1] if i < 15 else 255)
+            ec_io.ec_write(3856 + i + 1, cpu['dnT'][i])
+        ec_io.ec_write(3872 + i, min(cpu['duty'][i], 100) * 2)
+        ec_io.ec_write(3888 + i, gpu['upT'][i + 1] if i < 15 else 255)
         if i < 15:
-            ec_write(h, 3904 + i + 1, gpu['dnT'][i])
-        ec_write(h, 3920 + i, min(gpu['duty'][i], 100) * 2)
+            ec_io.ec_write(3904 + i + 1, gpu['dnT'][i])
+        ec_io.ec_write(3920 + i, min(gpu['duty'][i], 100) * 2)
 
 
-def switch_mode(h, name, pl1=None, pl2=None, pl4=None, tcc=0, separate=False):
+def switch_mode(name, pl1=None, pl2=None, pl4=None, tcc=0, separate=False):
     m = MODES.get(name)
     if m is None:
         raise ValueError(f"unknown mode: {name}")
@@ -172,69 +100,70 @@ def switch_mode(h, name, pl1=None, pl2=None, pl4=None, tcc=0, separate=False):
     if m["pl"] is not None and pl1 is None:
         pl1, pl2, pl4 = m["pl"]
     elif m["pl"] is None and pl1 is None:
-        if _is_ac():
+        if ec_io.is_ac_power():
             pl1, pl2, pl4 = PL_DEFAULTS["turbo"]
         else:
             pl1, pl2, pl4 = PL_DC
-        print(f"  Turbo PL (AC={_is_ac()}): {pl1}/{pl2}/{pl4}")
+        print(f"  Turbo PL (AC={ec_io.is_ac_power()}): {pl1}/{pl2}/{pl4}")
     pl1 = pl1 or 0; pl2 = pl2 or 0; pl4 = pl4 or 0
 
     print(f"  Mode: {m['desc']} (operating={m['mode']})")
     print(f"  PL:   {pl1}/{pl2}/{pl4}")
 
     # re-enable AP control
-    _rmw(h, ADDR_AP_CTL, set_bits=0x04)
-    val = ec_read(h, ADDR_AP_CTL)
+    ec_io.ec_rmw(ADDR_AP_CTL, set_bits=0x04)
+    val = ec_io.ec_read(ADDR_AP_CTL)
     ok = "OK" if val & 4 else "FAIL"
     print(f"  EC[{ADDR_AP_CTL}] AP_CTL  = {val} (0x{val:02x})  bit2={ok}")
 
     if m["custom"]:
-        _rmw(h, ADDR_AP_OEM10, set_bits=0x40)
+        ec_io.ec_rmw(ADDR_AP_OEM10, set_bits=0x40)
     else:
-        _rmw(h, ADDR_AP_OEM10, clear_bits=0x40)
+        ec_io.ec_rmw(ADDR_AP_OEM10, clear_bits=0x40)
 
-    # toggle AP control off, write fan table, then on (matching SetFanTable flow)
-    # mark AP as alive (EC 1857 bit0) – matches Set_APExistToEC(true)
-    _rmw(h, ADDR_AP_OEM, set_bits=0x01)
+    # mark AP as alive (EC 1857 bit0) -- matches Set_APExistToEC(true)
+    ec_io.ec_rmw(ADDR_AP_OEM, set_bits=0x01)
 
-    _rmw(h, ADDR_AP_CTL, clear_bits=0x04)
+    ec_io.ec_rmw(ADDR_AP_CTL, clear_bits=0x04)
     if m["custom"]:
-        _write_fan_table(h)
+        _write_fan_table()
 
     # FanSwitchSpeed = minimum (value=100 -> 1s transition)
-    _rmw(h, ADDR_AP_CTL, clear_bits=0x04)  # ensure AP exists before write
-    ec_write(h, 1927, 0x81)                # 1s slew rate, enable
-    ec_write(h, 1926, tcc | 0x80)          # TCC offset (0=disabled, bit7=enable)
-    ec_write(h, 1989, 0x80 if separate else 0x00)  # FanControlRespective (bit7=1=separate)
-    _rmw(h, ADDR_AP_CTL, set_bits=0x04)
+    ec_io.ec_rmw(ADDR_AP_CTL, clear_bits=0x04)  # ensure AP exists before write
+    ec_io.ec_write(1927, 0x81)                   # 1s slew rate, enable
+    ec_io.ec_write(1926, tcc | 0x80)             # TCC offset (0=disabled, bit7=enable)
+    ec_io.ec_write(1989, 0x80 if separate else 0x00)  # FanControlRespective (bit7=1=separate)
+    ec_io.ec_rmw(ADDR_AP_CTL, set_bits=0x04)
 
-    ec_write(h, ADDR_PL1, pl1 & 0xFF)
-    ec_write(h, ADDR_PL2, pl2 & 0xFF)
-    ec_write(h, ADDR_PL4, pl4 & 0xFF)
+    ec_io.ec_write(ADDR_PL1, pl1 & 0xFF)
+    ec_io.ec_write(ADDR_PL2, pl2 & 0xFF)
+    ec_io.ec_write(ADDR_PL4, pl4 & 0xFF)
 
-    ec_write(h, ADDR_MAFAN_CTL, m["ctl"])
+    ec_io.ec_write(ADDR_MAFAN_CTL, m["ctl"])
 
     # re-enable AP control only after mode byte is set
-    # re-enable AP control
-    _rmw(h, ADDR_AP_CTL, set_bits=0x04)
+    ec_io.ec_rmw(ADDR_AP_CTL, set_bits=0x04)
 
     if m["custom"]:
-        _rmw(h, ADDR_AP_OEM9, set_bits=0x80)
+        ec_io.ec_rmw(ADDR_AP_OEM9, set_bits=0x80)
     else:
-        _rmw(h, ADDR_AP_OEM9, clear_bits=0x80)
+        ec_io.ec_rmw(ADDR_AP_OEM9, clear_bits=0x80)
 
     # verify
-    got = ec_read(h, ADDR_MAFAN_CTL)
-    oem9 = ec_read(h, ADDR_AP_OEM9)
-    oem57 = ec_read(h, ADDR_AP_OEM)
-    sws = ec_read(h, 1927)
-    tcc_val = ec_read(h, 1926)
+    got = ec_io.ec_read(ADDR_MAFAN_CTL)
+    oem9 = ec_io.ec_read(ADDR_AP_OEM9)
+    oem57 = ec_io.ec_read(ADDR_AP_OEM)
+    sws = ec_io.ec_read(1927)
+    tcc_val = ec_io.ec_read(1926)
     print(f"  EC[1857] ApExist  = {oem57} (0x{oem57:02x})  bit0={oem57&1}")
     print(f"  EC[1830] OEM9     = {oem9} (0x{oem9:02x})  bit7={(oem9>>7)&1}")
     print(f"  EC[1927] SwSpeed  = {sws} (0x{sws:02x})  {f'{sws&0x7F}s' if sws&0x80 else 'instant'}")
-    resp = ec_read(h, 1989)
+    resp = ec_io.ec_read(1989)
     print(f"  EC[1989] Respct  = {resp} (0x{resp:02x})  bit7={(resp>>7)&1}")
-    print(f"  EC[1926] TCC      = {tcc_val} (0x{tcc_val:02x})  Tj-{tcc_val&0x7F}C" if tcc_val&0x80 else f"  EC[1926] TCC      = disabled")
+    if tcc_val & 0x80:
+        print(f"  EC[1926] TCC      = {tcc_val} (0x{tcc_val:02x})  Tj-{tcc_val&0x7F}C")
+    else:
+        print(f"  EC[1926] TCC      = disabled")
     ok = "OK" if got == m["ctl"] else f"FAIL expected {m['ctl']}"
     print(f"  EC[{ADDR_MAFAN_CTL}] CTL    = {got} (0x{got:02x})  {ok}")
     return True
@@ -249,12 +178,12 @@ EC_1873_LABELS = {
 }
 
 
-def show_status(h):
-    ctl = ec_read(h, ADDR_MAFAN_CTL)
-    pl1 = ec_read(h, ADDR_PL1); pl2 = ec_read(h, ADDR_PL2); pl4 = ec_read(h, ADDR_PL4)
-    oem9 = ec_read(h, ADDR_AP_OEM9); oem10 = ec_read(h, ADDR_AP_OEM10)
-    oem57 = ec_read(h, ADDR_AP_OEM)
-    ap = ec_read(h, ADDR_AP_CTL)
+def show_status():
+    ctl = ec_io.ec_read(ADDR_MAFAN_CTL)
+    pl1 = ec_io.ec_read(ADDR_PL1); pl2 = ec_io.ec_read(ADDR_PL2); pl4 = ec_io.ec_read(ADDR_PL4)
+    oem9 = ec_io.ec_read(ADDR_AP_OEM9); oem10 = ec_io.ec_read(ADDR_AP_OEM10)
+    oem57 = ec_io.ec_read(ADDR_AP_OEM)
+    ap = ec_io.ec_read(ADDR_AP_CTL)
     label = EC_1873_LABELS.get(ctl, "?")
     custom = " (custom)" if oem9 & 0x80 else ""
     print("[EC Status]")
@@ -292,26 +221,22 @@ def main():
 
     args = p.parse_args()
 
-    h = open_device()
-    try:
-        if args.action == "switch":
-            switch_mode(h, args.mode_name,
-                        getattr(args, "pl1", None),
-                        getattr(args, "pl2", None),
-                        getattr(args, "pl4", None),
-                        getattr(args, "tcc", 0),
-                        getattr(args, "separate", False))
-        elif args.action == "status":
-            show_status(h)
-        elif args.action == "dump":
-            for addr in range(1829, 1829 + 16):
-                val = ec_read(h, addr)
-                print(f"  EC[{addr}] = {val:3d} (0x{val:02x})")
-            for addr in range(1989, 1989 + 6):
-                val = ec_read(h, addr)
-                print(f"  EC[{addr}] = {val:3d} (0x{val:02x})")
-    finally:
-        close_device(h)
+    if args.action == "switch":
+        switch_mode(args.mode_name,
+                    getattr(args, "pl1", None),
+                    getattr(args, "pl2", None),
+                    getattr(args, "pl4", None),
+                    getattr(args, "tcc", 0),
+                    getattr(args, "separate", False))
+    elif args.action == "status":
+        show_status()
+    elif args.action == "dump":
+        for addr in range(1829, 1829 + 16):
+            val = ec_io.ec_read(addr)
+            print(f"  EC[{addr}] = {val:3d} (0x{val:02x})")
+        for addr in range(1989, 1989 + 6):
+            val = ec_io.ec_read(addr)
+            print(f"  EC[{addr}] = {val:3d} (0x{val:02x})")
 
 
 if __name__ == "__main__":
@@ -320,4 +245,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
-
