@@ -13,9 +13,12 @@ ADDR_SECOND_FAN_RPM_LO = 1131
 ADDR_AP_OEM9 = 1830
 ADDR_AP_OEM10 = 1831
 ADDR_AP_OEM = 1857
+ADDR_BIOS_OEM_BYTE = 1870
 ADDR_MAFAN_CTL = 1873
 ADDR_MAIN_FAN_DUTY = 1883
 ADDR_SECOND_FAN_DUTY = 1884
+ADDR_TRIGGER_BYTE = 1895
+ADDR_STATUS_BYTE = 1896
 ADDR_PL1 = 1923
 ADDR_PL2 = 1924
 ADDR_PL4 = 1925
@@ -102,4 +105,11 @@ BACKLIGHT_LABELS = {
     2: "dim",
     3: "level3",
     4: "bright",
+}
+
+SETTING_LABELS = {
+    "winlock": {"addr": ADDR_STATUS_BYTE, "bit": 0, "on": "locked", "off": "unlocked"},
+    "fnlock": {"addr": ADDR_BIOS_OEM_BYTE, "bit": 4, "on": "locked", "off": "unlocked"},
+    "usbchg": {"addr": ADDR_TRIGGER_BYTE, "bit": 4, "on": "on", "off": "off"},
+    "acrecov": {"addr": ADDR_AP_OEM9, "bit": 3, "on": "on", "off": "off"},
 }
