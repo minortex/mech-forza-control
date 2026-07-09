@@ -1,35 +1,28 @@
-#!/usr/bin/env python3
 """Low-level EC byte read / write / dump."""
 
 import argparse
-import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-import ec_io
+from ec.io import ec_read, ec_write
 
-
-# ---------- commands ----------
 
 def cmd_read(args):
-    val = ec_io.ec_read(args.addr)
+    val = ec_read(args.addr)
     print(f"EC[{args.addr}] = {val} (0x{val:02X})")
 
 
 def cmd_write(args):
-    before = ec_io.ec_read(args.addr)
-    ec_io.ec_write(args.addr, args.value)
-    after = ec_io.ec_read(args.addr)
+    before = ec_read(args.addr)
+    ec_write(args.addr, args.value)
+    after = ec_read(args.addr)
     print(f"EC[{args.addr}] : {before} (0x{before:02X}) -> {after} (0x{after:02X})")
 
 
 def cmd_dump(args):
     for addr in range(args.start, args.start + args.count):
-        val = ec_io.ec_read(addr)
-        print(f"EC[{addr:4d}] = {val:3d} (0x{val:02X})")
+        v = ec_read(addr)
+        print(f"EC[{addr:4d}] = {v:3d} (0x{v:02X})")
 
-
-# ---------- entry ----------
 
 def main():
     p = argparse.ArgumentParser(description="Low-level EC byte read / write / dump")

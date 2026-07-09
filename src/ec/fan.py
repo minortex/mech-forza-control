@@ -2,16 +2,25 @@
 
 import time
 
+from .config import (
+    ADDR_MAIN_FAN_DUTY,
+    ADDR_MAIN_FAN_RPM_HI,
+    ADDR_MAIN_FAN_RPM_LO,
+    ADDR_MAFAN_CTL,
+    ADDR_SECOND_FAN_DUTY,
+    ADDR_SECOND_FAN_RPM_HI,
+    ADDR_SECOND_FAN_RPM_LO,
+)
 from .io import ec_read
 
 
 def _read():
     return (
-        ec_read(1124) * 256 + ec_read(1125),
-        ec_read(1132) * 256 + ec_read(1131),
-        ec_read(1873),
-        ec_read(1883),
-        ec_read(1884),
+        ec_read(ADDR_MAIN_FAN_RPM_HI) * 256 + ec_read(ADDR_MAIN_FAN_RPM_LO),
+        ec_read(ADDR_SECOND_FAN_RPM_HI) * 256 + ec_read(ADDR_SECOND_FAN_RPM_LO),
+        ec_read(ADDR_MAFAN_CTL),
+        ec_read(ADDR_MAIN_FAN_DUTY),
+        ec_read(ADDR_SECOND_FAN_DUTY),
     )
 
 
