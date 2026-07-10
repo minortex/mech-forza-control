@@ -27,4 +27,6 @@ The location of config is in `src/ec/config.py`, you can manually change the fan
 ## Thanks
 
 - [@w568w](https://github.com/w568w) for providing decompiled official control center.
+- [@LongSang01](https://github.com/LongSang01) for switch fixed tdp on this laptop.
 - Peoples in [this post](https://gist.github.com/w568w/b2fc5f9d1f4dff13efe751abec27b396).
+

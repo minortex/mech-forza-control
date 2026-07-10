@@ -22,13 +22,34 @@ from .config import (
     DEFAULT_GPU_FAN,
     MODE_CTL_LABELS,
     MODES,
-    PL_DC,
-    PL_DEFAULTS,
+    TDP_CTL,
 )
-from .io import ec_read, ec_write, ec_rmw, is_ac_power
+from .io import ec_read, ec_write, ec_rmw
 
 
 # ── helpers ──────────────────────────────────────────────────────────
+
+def _resolve_tcc(args):
+    tcc = getattr(args, "tcc", 0) or 0
+    if not 0 <= tcc <= 100:
+        raise ValueError(f"tcc must be 0-100, got {tcc}")
+    return tcc
+
+
+def _encode_tcc(tcc):
+    if tcc == 0:
+        return 0
+    return tcc | 0x80
+
+
+def _resolve_ctl(args, mode):
+    tdp = getattr(args, "tdp", None)
+    if mode["custom"] and tdp is not None:
+        if tdp not in TDP_CTL:
+            raise ValueError(f"custom TDP must be one of 25, 45, 65; got {tdp}")
+        return TDP_CTL[tdp]
+    return mode["ctl"]
+
 
 def _write_fan_table(cpu=None, gpu=None):
     cpu = cpu or DEFAULT_CPU_FAN
@@ -52,23 +73,14 @@ def cmd_switch(args):
     if m is None:
         raise ValueError(f"unknown mode: {name}")
 
-    pl1 = getattr(args, "pl1", None)
-    pl2 = getattr(args, "pl2", None)
-    pl4 = getattr(args, "pl4", None)
-    if m["pl"] is not None and pl1 is None:
-        pl1, pl2, pl4 = m["pl"]
-    elif m["pl"] is None and pl1 is None:
-        if is_ac_power():
-            pl1, pl2, pl4 = PL_DEFAULTS["turbo"]
-        else:
-            pl1, pl2, pl4 = PL_DC
-        print(f"  Turbo PL (AC={is_ac_power()}): {pl1}/{pl2}/{pl4}")
-    pl1 = pl1 or 0
-    pl2 = pl2 or 0
-    pl4 = pl4 or 0
+    tcc = _resolve_tcc(args)
+    ctl = _resolve_ctl(args, m)
+
+    tdp = getattr(args, "tdp", None) if m["custom"] else m["tdp"]
 
     print(f"  Mode: {m['desc']} (operating={m['mode']})")
-    print(f"  PL:   {pl1}/{pl2}/{pl4}")
+    print(f"  TDP:  {tdp}W")
+    print("  PL:   managed by EC/BIOS")
 
     ec_rmw(ADDR_AP_CTL, set_bits=0x04)
     v = ec_read(ADDR_AP_CTL)
@@ -80,13 +92,11 @@ def cmd_switch(args):
     if m["custom"]: _write_fan_table()
     ec_rmw(ADDR_AP_CTL, clear_bits=0x04)
     ec_write(ADDR_FAN_SWITCH_SPEED, 0x81)
-    ec_write(ADDR_TCC, getattr(args, "tcc", 0) | 0x80)
+    if m["custom"]:
+        ec_write(ADDR_TCC, _encode_tcc(tcc))
     ec_write(ADDR_FANCTL_RESP, 0x80 if getattr(args, "separate", False) else 0x00)
     ec_rmw(ADDR_AP_CTL, set_bits=0x04)
-    ec_write(ADDR_PL1, pl1 & 0xFF)
-    ec_write(ADDR_PL2, pl2 & 0xFF)
-    ec_write(ADDR_PL4, pl4 & 0xFF)
-    ec_write(ADDR_MAFAN_CTL, m["ctl"])
+    ec_write(ADDR_MAFAN_CTL, ctl)
     ec_rmw(ADDR_AP_CTL, set_bits=0x04)
     ec_rmw(ADDR_AP_OEM9, set_bits=0x80) if m["custom"] else ec_rmw(ADDR_AP_OEM9, clear_bits=0x80)
 
@@ -97,8 +107,16 @@ def cmd_switch(args):
     print(f"  EC[1830] OEM9     = {e30} (0x{e30:02x})  bit7={e30>>7}")
     print(f"  EC[1927] SwSpeed  = {e27}  {f'{e27&0x7F}s' if e27&0x80 else 'instant'}")
     print(f"  EC[1989] Respct   = {e89} (0x{e89:02x})  bit7={e89>>7}")
-    print(f"  EC[1926] TCC      = {'disabled' if not e26&0x80 else f'{e26}  Tj-{e26&0x7F}C'}")
-    ok = "OK" if got == m["ctl"] else f"FAIL expected {m['ctl']}"
+    if not m["custom"]:
+        tcc_status = "not written in fixed mode"
+    elif e26 == 0:
+        tcc_status = "disabled"
+    elif e26 & 0x80:
+        tcc_status = f"{e26 & 0x7f} (enabled, raw=0x{e26:02x})"
+    else:
+        tcc_status = f"{e26} (raw, enable bit clear)"
+    print(f"  EC[1926] TCC      = {tcc_status}")
+    ok = "OK" if got == ctl else f"FAIL expected {ctl}"
     print(f"  EC[{ADDR_MAFAN_CTL}] CTL    = {got} (0x{got:02x})  {ok}")
 
 
@@ -135,12 +153,10 @@ def register(subparsers):
     for name, info in MODES.items():
         sp = sub.add_parser(name, help=info["desc"])
         sp.set_defaults(func=cmd_switch, mode_name=name)
-        if name in ("custom", "turbo"):
-            sp.add_argument("--pl1", type=int, default=None)
-            sp.add_argument("--pl2", type=int, default=None)
-            sp.add_argument("--pl4", type=int, default=None)
         if name == "custom":
-            sp.add_argument("--tcc", type=int, default=0)
+            sp.add_argument("tdp", type=int, nargs="?", choices=sorted(TDP_CTL), default=45,
+                            help="Fixed TDP gear: 25, 45, or 65")
+            sp.add_argument("--tcc", type=int, default=0, help="TCC target 0-100; 0 disables")
             sp.add_argument("--separate", action="store_true")
     sub.add_parser("status", help="Show current EC state").set_defaults(func=cmd_status)
     sub.add_parser("dump", help="Dump key EC registers").set_defaults(func=cmd_dump)

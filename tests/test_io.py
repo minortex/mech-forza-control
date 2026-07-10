@@ -3,7 +3,15 @@ from argparse import Namespace
 
 from ec import mode
 from ec import io
-from ec.config import EC_MMIO_MAX
+from ec.config import (
+    ADDR_MAFAN_CTL,
+    ADDR_PL1,
+    ADDR_PL2,
+    ADDR_PL4,
+    ADDR_TCC,
+    CTL_TURBO,
+    EC_MMIO_MAX,
+)
 
 
 class FakeBackend:
@@ -88,4 +96,56 @@ def test_mode_switch_handles_modes_without_optional_custom_args(capsys):
     mode.cmd_switch(Namespace(mode_name="gaming"))
 
     output = capsys.readouterr().out
-    assert "Mode: Gaming (balanced)" in output
+    assert "Mode: Gaming (45W balanced)" in output
+
+
+def test_fixed_modes_do_not_write_tcc():
+    backend = FakeBackend()
+    io._set_backend_for_testing(backend)
+
+    mode.cmd_switch(Namespace(mode_name="gaming"))
+
+    assert all(addr != ADDR_TCC for addr, _ in backend.writes)
+
+
+def test_mode_switch_does_not_write_pl_registers():
+    backend = FakeBackend()
+    io._set_backend_for_testing(backend)
+
+    mode.cmd_switch(Namespace(mode_name="custom", tdp=65, tcc=95, separate=False))
+
+    pl_addrs = {ADDR_PL1, ADDR_PL2, ADDR_PL4}
+    assert all(addr not in pl_addrs for addr, _ in backend.writes)
+
+
+def test_custom_mode_accepts_fixed_tdp_gear():
+    backend = FakeBackend()
+    io._set_backend_for_testing(backend)
+
+    mode.cmd_switch(Namespace(mode_name="custom", tdp=65, tcc=95, separate=False))
+
+    assert backend.values[ADDR_MAFAN_CTL] == CTL_TURBO
+    assert backend.values[ADDR_TCC] == 0xDF
+
+
+def test_custom_mode_tcc_default_keeps_bit7_clear():
+    backend = FakeBackend()
+    io._set_backend_for_testing(backend)
+
+    mode.cmd_switch(Namespace(mode_name="custom", tdp=45, tcc=0, separate=False))
+
+    assert backend.values[ADDR_TCC] == 0
+
+
+def test_custom_mode_rejects_unknown_tdp_gear():
+    io._set_backend_for_testing(FakeBackend())
+
+    with pytest.raises(ValueError, match="25, 45, 65"):
+        mode.cmd_switch(Namespace(mode_name="custom", tdp=54, tcc=0, separate=False))
+
+
+def test_custom_mode_rejects_tcc_over_100():
+    io._set_backend_for_testing(FakeBackend())
+
+    with pytest.raises(ValueError, match="0-100"):
+        mode.cmd_switch(Namespace(mode_name="custom", tdp=45, tcc=101, separate=False))

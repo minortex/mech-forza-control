@@ -39,14 +39,6 @@ CTL_NORMAL = 0
 CTL_TURBO = 16
 CTL_USER_HI = 160
 
-PL_DEFAULTS = {
-    "gaming": (45, 45, 50),
-    "office": (25, 25, 30),
-    "turbo": (73, 73, 90),
-    "custom": (45, 45, 50),
-}
-PL_DC = (0, 0, 0)
-
 DEFAULT_CPU_FAN = {
     "upT": [40, 45, 50, 55, 60, 65, 68, 72, 76, 80, 83, 86, 89, 92, 95, 255],
     "dnT": [35, 40, 45, 50, 55, 60, 63, 67, 71, 75, 78, 81, 84, 87, 90, 95],
@@ -60,31 +52,31 @@ DEFAULT_GPU_FAN = {
 
 MODES = {
     "office": {
-        "desc": "Office (silent)",
+        "desc": "Office (25W silent)",
         "mode": 0,
+        "tdp": 25,
         "ctl": CTL_USER_HI,
-        "pl": PL_DEFAULTS["office"],
         "custom": False,
     },
     "gaming": {
-        "desc": "Gaming (balanced)",
+        "desc": "Gaming (45W balanced)",
         "mode": 1,
+        "tdp": 45,
         "ctl": CTL_NORMAL,
-        "pl": PL_DEFAULTS["gaming"],
         "custom": False,
     },
     "turbo": {
-        "desc": "Turbo (performance)",
+        "desc": "Turbo (65W performance)",
         "mode": 2,
+        "tdp": 65,
         "ctl": CTL_TURBO,
-        "pl": None,
         "custom": False,
     },
     "custom": {
         "desc": "Custom (manual fan)",
         "mode": 3,
+        "tdp": None,
         "ctl": CTL_NORMAL,
-        "pl": PL_DEFAULTS["custom"],
         "custom": True,
     },
 }
@@ -97,6 +89,12 @@ MODE_CTL_LABELS = {
     128: "User_Fan",
     160: "HiMode (Office)",
     224: "HiMode+FanBoost",
+}
+
+TDP_CTL = {
+    25: CTL_USER_HI,
+    45: CTL_NORMAL,
+    65: CTL_TURBO,
 }
 
 # Brightness order (brightest to dimmest): 2 > 4 > 1 > 3 > 0
