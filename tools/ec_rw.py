@@ -6,6 +6,11 @@ import sys
 from ec.io import ec_read, ec_write
 
 
+def _int(s: str) -> int:
+    """Accept decimal and 0x-hex literals."""
+    return int(s, 0)
+
+
 def cmd_read(args):
     val = ec_read(args.addr)
     print(f"EC[{args.addr}] = {val} (0x{val:02X})")
@@ -29,15 +34,15 @@ def main():
     sub = p.add_subparsers(dest="cmd")
 
     rp = sub.add_parser("read", help="Read one EC byte")
-    rp.add_argument("addr", type=int, help="EC address")
+    rp.add_argument("addr", type=_int, help="EC address (decimal or 0x hex)")
 
     wp = sub.add_parser("write", help="Write one EC byte")
-    wp.add_argument("addr", type=int, help="EC address")
-    wp.add_argument("value", type=int, help="Byte value (0-255)")
+    wp.add_argument("addr", type=_int, help="EC address (decimal or 0x hex)")
+    wp.add_argument("value", type=_int, help="Byte value (0-255, decimal or 0x hex)")
 
     dp = sub.add_parser("dump", help="Dump EC byte range")
-    dp.add_argument("start", type=int, help="Start address")
-    dp.add_argument("count", type=int, nargs="?", default=16, help="Number of bytes")
+    dp.add_argument("start", type=_int, help="Start address (decimal or 0x hex)")
+    dp.add_argument("count", type=_int, nargs="?", default=16, help="Number of bytes")
 
     args = p.parse_args()
     if args.cmd == "read":
