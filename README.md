@@ -8,6 +8,9 @@ Currently support power profiles configuration, fan control and keyboard light c
 
 ## Usage
 
+> [!IMPORTANT]
+> Remember to mask or uninstall tccd first, or fan may not take effect.
+
 On Linux: need `sudo` to write `/dev/mem`
 
 ```bash
