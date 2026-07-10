@@ -1,10 +1,12 @@
 import pytest
 from argparse import Namespace
 
-from ec import mode
+from ec import fan, mode
 from ec import io
 from ec.config import (
     ADDR_MAFAN_CTL,
+    ADDR_AP_OEM9,
+    ADDR_FAN_SWITCH_SPEED,
     ADDR_PL1,
     ADDR_PL2,
     ADDR_PL4,
@@ -149,3 +151,57 @@ def test_custom_mode_rejects_tcc_over_100():
 
     with pytest.raises(ValueError, match="0-100"):
         mode.cmd_switch(Namespace(mode_name="custom", tdp=45, tcc=101, separate=False))
+
+
+def test_status_distinguishes_gaming_from_custom(capsys):
+    io._set_backend_for_testing(FakeBackend({ADDR_MAFAN_CTL: 0, ADDR_AP_OEM9: 0}))
+
+    mode.cmd_status(Namespace())
+
+    output = capsys.readouterr().out
+    assert "Gaming 45W" in output
+    assert "not authoritative" in output
+
+
+def test_status_decodes_custom_from_oem9_bit7(capsys):
+    io._set_backend_for_testing(FakeBackend({ADDR_MAFAN_CTL: 0, ADDR_AP_OEM9: 0x80}))
+
+    mode.cmd_status(Namespace())
+
+    output = capsys.readouterr().out
+    assert "Custom 45W" in output
+
+
+def test_fan_switch_speed_writes_steps_with_enable_bit():
+    backend = FakeBackend()
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_switch_speed(Namespace(steps=1))
+
+    assert backend.writes == [(ADDR_FAN_SWITCH_SPEED, 0x81)]
+
+
+def test_fan_switch_speed_zero_writes_ec_default():
+    backend = FakeBackend()
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_switch_speed(Namespace(steps=0))
+
+    assert backend.writes == [(ADDR_FAN_SWITCH_SPEED, 0x00)]
+
+
+def test_fan_switch_speed_rejects_values_outside_low_7_bits():
+    io._set_backend_for_testing(FakeBackend())
+
+    with pytest.raises(ValueError, match="0-127 steps"):
+        fan.cmd_switch_speed(Namespace(steps=128))
+
+
+def test_fan_read_decodes_zero_step_as_ec_default(capsys):
+    io._set_backend_for_testing(FakeBackend({ADDR_FAN_SWITCH_SPEED: 0x80}))
+
+    fan.cmd_read(Namespace())
+
+    output = capsys.readouterr().out
+    assert "EC default" in output
+    assert "7s" in output

@@ -13,6 +13,7 @@ from .config import (
     ADDR_CPU_FAN_DUTY_BASE,
     ADDR_CPU_FAN_UPT_BASE,
     ADDR_CPU_FAN_DNT_BASE,
+    ADDR_FAN_SWITCH_SPEED,
     ADDR_GPU_FAN_DUTY_BASE,
     ADDR_GPU_FAN_UPT_BASE,
     ADDR_GPU_FAN_DNT_BASE,
@@ -22,6 +23,21 @@ from .config import (
 from .io import ec_read, ec_write
 
 
+def _encode_switch_speed(steps):
+    if not 0 <= steps <= 127:
+        raise ValueError(f"fan switch speed must be 0-127 steps, got {steps}")
+    if steps == 0:
+        return 0
+    return 0x80 | steps
+
+
+def _decode_switch_speed(value):
+    steps = value & 0x7f
+    if steps == 0:
+        return "EC default, about 7s observed"
+    return f"{steps} step(s), about {steps * 2}s"
+
+
 def _read():
     return (
         ec_read(ADDR_MAIN_FAN_RPM_HI) * 256 + ec_read(ADDR_MAIN_FAN_RPM_LO),
@@ -29,15 +45,20 @@ def _read():
         ec_read(ADDR_MAFAN_CTL),
         ec_read(ADDR_MAIN_FAN_DUTY),
         ec_read(ADDR_SECOND_FAN_DUTY),
+        ec_read(ADDR_FAN_SWITCH_SPEED),
     )
 
 
 def cmd_read(args):
-    mr, sr, ctrl, dm, ds = _read()
+    mr, sr, ctrl, dm, ds, sw = _read()
     print(f"Main fan (Right) RPM : {mr}")
     print(f"Sec  fan (Left)  RPM : {sr}")
     print(f"Control byte         : {ctrl} (0b{ctrl:08b})")
     print(f"Duty Main(R)/Sec(L)  : {dm} / {ds}")
+    print(
+        f"Switch speed         : {_decode_switch_speed(sw)} "
+        f"(EC[{ADDR_FAN_SWITCH_SPEED}] = {sw}, 0x{sw:02x})"
+    )
 
 
 def cmd_monitor(args):
@@ -47,11 +68,22 @@ def cmd_monitor(args):
     print(hdr); print("-" * 60)
     try:
         while True:
-            mr, sr, ctrl, dm, ds = _read()
+            mr, sr, ctrl, dm, ds, _ = _read()
             print(f"{time.strftime('%H:%M:%S')}  {mr:>7}  {sr:>7}  {ctrl:>5}  {dm:>8}  {ds:>8}", flush=True)
             time.sleep(iv)
     except KeyboardInterrupt:
         pass
+
+
+def cmd_switch_speed(args):
+    """Set the EC fan transition/switch speed."""
+    raw = _encode_switch_speed(args.steps)
+    ec_write(ADDR_FAN_SWITCH_SPEED, raw)
+    got = ec_read(ADDR_FAN_SWITCH_SPEED)
+    print(
+        f"  Fan switch speed: {_decode_switch_speed(got)} "
+        f"(EC[{ADDR_FAN_SWITCH_SPEED}] = {got}, 0x{got:02x})"
+    )
 
 
 def cmd_set(args):
@@ -99,6 +131,16 @@ def register(subparsers):
     mon = sub.add_parser("monitor", help="Continuously monitor")
     mon.add_argument("-i", "--interval", type=float, default=1.0)
     mon.set_defaults(func=cmd_monitor)
+    sw = sub.add_parser(
+        "switch-speed",
+        help="Set fan transition speed (unit: 2 seconds per step, 0-127)",
+    )
+    sw.add_argument(
+        "steps",
+        type=int,
+        help="Unit: 2 seconds per step. 1=2s, 3=6s; 0 uses EC default (~7s observed)",
+    )
+    sw.set_defaults(func=cmd_switch_speed)
     sp = sub.add_parser("set", help="Force fan speed(s) (0-100%%)")
     sp.add_argument("percentage", type=int, nargs="+",
                     help="1 value for both fans, or 2 values (CPU then GPU)")

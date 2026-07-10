@@ -51,6 +51,16 @@ def _resolve_ctl(args, mode):
     return mode["ctl"]
 
 
+def _status_label(ctl, custom):
+    if ctl == 0xA0:
+        return "Custom 25W" if custom else "Office 25W"
+    if ctl == 0x00:
+        return "Custom 45W" if custom else "Gaming 45W"
+    if ctl == 0x10:
+        return "Custom 65W" if custom else "Turbo 65W"
+    return MODE_CTL_LABELS.get(ctl, "?")
+
+
 def _write_fan_table(cpu=None, gpu=None):
     cpu = cpu or DEFAULT_CPU_FAN
     gpu = gpu or DEFAULT_GPU_FAN
@@ -105,7 +115,12 @@ def cmd_switch(args):
     e26 = ec_read(ADDR_TCC); got = ec_read(ADDR_MAFAN_CTL)
     print(f"  EC[1857] ApExist  = {e57} (0x{e57:02x})  bit0={e57&1}")
     print(f"  EC[1830] OEM9     = {e30} (0x{e30:02x})  bit7={e30>>7}")
-    print(f"  EC[1927] SwSpeed  = {e27}  {f'{e27&0x7F}s' if e27&0x80 else 'instant'}")
+    sw_steps = e27 & 0x7F
+    if sw_steps:
+        sw_status = f"{sw_steps} step(s), about {sw_steps * 2}s"
+    else:
+        sw_status = "EC default, about 7s observed"
+    print(f"  EC[1927] SwSpeed  = {e27}  {sw_status}")
     print(f"  EC[1989] Respct   = {e89} (0x{e89:02x})  bit7={e89>>7}")
     if not m["custom"]:
         tcc_status = "not written in fixed mode"
@@ -125,15 +140,15 @@ def cmd_status(args):
     pl1, pl2, pl4 = ec_read(ADDR_PL1), ec_read(ADDR_PL2), ec_read(ADDR_PL4)
     oem9, oem10 = ec_read(ADDR_AP_OEM9), ec_read(ADDR_AP_OEM10)
     oem57, ap = ec_read(ADDR_AP_OEM), ec_read(ADDR_AP_CTL)
-    label = MODE_CTL_LABELS.get(ctl, "?")
-    custom = " (custom)" if oem9 & 0x80 else ""
+    custom = bool(oem9 & 0x80)
+    label = _status_label(ctl, custom)
     print("[EC Status]")
-    print(f"  EC[1873] CTL    = {ctl} (0x{ctl:02x})  {label}{custom}")
+    print(f"  EC[1873] CTL    = {ctl} (0x{ctl:02x})  {label}")
     print(f"  EC[1830] OEM9   = {oem9} (0x{oem9:02x})  bit7={oem9>>7}")
     print(f"  EC[1831] OEM10  = {oem10} (0x{oem10:02x})  bit6={(oem10>>6)&1}")
     print(f"  EC[1857] AP_OEM = {oem57} (0x{oem57:02x})  bit0={oem57&1} (ApExist)")
     print(f"  EC[1990] AP_CTL = {ap} (0x{ap:02x})  bit2={(ap>>2)&1}")
-    print(f"  PL:  {pl1}/{pl2}/{pl4}")
+    print(f"  EC PL readback  = {pl1}/{pl2}/{pl4}  (not authoritative for fixed modes/ryzenadj)")
 
 
 def cmd_dump(args):
