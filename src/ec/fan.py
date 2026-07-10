@@ -10,8 +10,16 @@ from .config import (
     ADDR_SECOND_FAN_DUTY,
     ADDR_SECOND_FAN_RPM_HI,
     ADDR_SECOND_FAN_RPM_LO,
+    ADDR_CPU_FAN_DUTY_BASE,
+    ADDR_CPU_FAN_UPT_BASE,
+    ADDR_CPU_FAN_DNT_BASE,
+    ADDR_GPU_FAN_DUTY_BASE,
+    ADDR_GPU_FAN_UPT_BASE,
+    ADDR_GPU_FAN_DNT_BASE,
+    DEFAULT_CPU_FAN,
+    DEFAULT_GPU_FAN,
 )
-from .io import ec_read
+from .io import ec_read, ec_write
 
 
 def _read():
@@ -46,6 +54,44 @@ def cmd_monitor(args):
         pass
 
 
+def cmd_set(args):
+    """Force fan to a fixed speed percentage by writing all duty-table entries."""
+    pcts = args.percentage
+    if len(pcts) == 1:
+        cpu_pct = gpu_pct = pcts[0]
+    elif len(pcts) == 2:
+        cpu_pct, gpu_pct = pcts
+    else:
+        raise ValueError(f"expected 1 or 2 percentages, got {len(pcts)}")
+
+    for pct, label, base in ((cpu_pct, "CPU", ADDR_CPU_FAN_DUTY_BASE),
+                              (gpu_pct, "GPU", ADDR_GPU_FAN_DUTY_BASE)):
+        if pct < 0 or pct > 100:
+            raise ValueError(f"{label} fan percentage must be 0-100, got {pct}")
+        duty = pct * 2
+        for i in range(16):
+            ec_write(base + i, duty)
+        first = ec_read(base)
+        print(f"  {label} fan duty: all 16 points set to {pct}% (EC value {duty})")
+        print(f"  EC[{base}] = {first} (0x{first:02x}) -- readback OK")
+
+
+def cmd_default(args):
+    """Restore the default fan curves from config."""
+    def _restore(base_upt, base_dnt, base_duty, table):
+        for i in range(16):
+            ec_write(base_upt + i, table["upT"][i + 1] if i < 15 else 255)
+            if i < 15:
+                ec_write(base_dnt + i + 1, table["dnT"][i])
+            ec_write(base_duty + i, min(table["duty"][i], 100) * 2)
+
+    _restore(ADDR_CPU_FAN_UPT_BASE, ADDR_CPU_FAN_DNT_BASE,
+             ADDR_CPU_FAN_DUTY_BASE, DEFAULT_CPU_FAN)
+    _restore(ADDR_GPU_FAN_UPT_BASE, ADDR_GPU_FAN_DNT_BASE,
+             ADDR_GPU_FAN_DUTY_BASE, DEFAULT_GPU_FAN)
+    print("  Fan tables restored to factory defaults (UpT, DownT, Duty)")
+
+
 def register(subparsers):
     fn = subparsers.add_parser("fan", help="Fan monitoring")
     sub = fn.add_subparsers(dest="fan_op", required=True)
@@ -53,3 +99,8 @@ def register(subparsers):
     mon = sub.add_parser("monitor", help="Continuously monitor")
     mon.add_argument("-i", "--interval", type=float, default=1.0)
     mon.set_defaults(func=cmd_monitor)
+    sp = sub.add_parser("set", help="Force fan speed(s) (0-100%%)")
+    sp.add_argument("percentage", type=int, nargs="+",
+                    help="1 value for both fans, or 2 values (CPU then GPU)")
+    sp.set_defaults(func=cmd_set)
+    sub.add_parser("default", help="Restore default fan curves").set_defaults(func=cmd_default)
