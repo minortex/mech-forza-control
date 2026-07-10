@@ -99,13 +99,15 @@ MODE_CTL_LABELS = {
     224: "HiMode+FanBoost",
 }
 
+# Brightness order (brightest to dimmest): 2 > 4 > 1 > 3 > 0
+# Keyboard shortcut cycle: 0 (off) -> 1 (dim, 001) -> 2 (max, 010)
 BACKLIGHT_LABELS = {
     0: "off",
-    1: "level1",
-    2: "dim",
-    3: "level3",
-    4: "bright",
+    1: "dim",
+    2: "bright",
 }
+
+BACKLIGHT_CYCLE = [0, 1, 2]  # off -> dim -> bright
 
 SETTING_LABELS = {
     "winlock": {"addr": ADDR_STATUS_BYTE, "bit": 0, "on": "locked", "off": "unlocked"},
