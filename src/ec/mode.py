@@ -1,5 +1,6 @@
 """Power mode switching — EC register sequences for Gaming / Office / Turbo / Custom."""
 
+
 from .config import (
     ADDR_AP_CTL,
     ADDR_AP_OEM,
@@ -30,7 +31,9 @@ from .io import ec_read, ec_write, ec_rmw
 # ── helpers ──────────────────────────────────────────────────────────
 
 def _resolve_tcc(args):
-    tcc = getattr(args, "tcc", 0) or 0
+    tcc = getattr(args, "tcc", None)
+    if tcc is None:
+        return None
     if not 0 <= tcc <= 100:
         raise ValueError(f"tcc must be 0-100, got {tcc}")
     return tcc
@@ -85,6 +88,9 @@ def cmd_switch(args):
 
     tcc = _resolve_tcc(args)
     ctl = _resolve_ctl(args, m)
+    tcc_raw = None
+    if m["custom"]:
+        tcc_raw = ec_read(ADDR_TCC) if tcc is None else _encode_tcc(tcc)
 
     tdp = getattr(args, "tdp", None) if m["custom"] else m["tdp"]
 
@@ -102,13 +108,13 @@ def cmd_switch(args):
     if m["custom"]: _write_fan_table()
     ec_rmw(ADDR_AP_CTL, clear_bits=0x04)
     ec_write(ADDR_FAN_SWITCH_SPEED, 0x81)
-    if m["custom"]:
-        ec_write(ADDR_TCC, _encode_tcc(tcc))
     ec_write(ADDR_FANCTL_RESP, 0x80 if getattr(args, "separate", False) else 0x00)
     ec_rmw(ADDR_AP_CTL, set_bits=0x04)
     ec_write(ADDR_MAFAN_CTL, ctl)
     ec_rmw(ADDR_AP_CTL, set_bits=0x04)
     ec_rmw(ADDR_AP_OEM9, set_bits=0x80) if m["custom"] else ec_rmw(ADDR_AP_OEM9, clear_bits=0x80)
+    if tcc_raw is not None:
+        ec_write(ADDR_TCC, tcc_raw)
 
     e57 = ec_read(ADDR_AP_OEM); e30 = ec_read(ADDR_AP_OEM9)
     e27 = ec_read(ADDR_FAN_SWITCH_SPEED); e89 = ec_read(ADDR_FANCTL_RESP)
@@ -171,7 +177,8 @@ def register(subparsers):
         if name == "custom":
             sp.add_argument("tdp", type=int, nargs="?", choices=sorted(TDP_CTL), default=45,
                             help="Fixed TDP gear: 25, 45, or 65")
-            sp.add_argument("--tcc", type=int, default=0, help="TCC target 0-100; 0 disables")
+            sp.add_argument("--tcc", type=int, default=None,
+                            help="TCC target 0-100; omit to keep unchanged, 0 disables")
             sp.add_argument("--separate", action="store_true")
     sub.add_parser("status", help="Show current EC state").set_defaults(func=cmd_status)
     sub.add_parser("dump", help="Dump key EC registers").set_defaults(func=cmd_dump)
