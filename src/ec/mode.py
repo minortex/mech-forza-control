@@ -176,6 +176,21 @@ def cmd_dump(args):
         print(f"  EC[{addr}] = {v:3d} (0x{v:02x})")
 
 
+def apply_custom_gear(tdp: int) -> None:
+    """Write only the power-gear registers for Custom mode.
+
+    Sets AP_OEM bit0, OEM10 bit6, MAFAN_CTL, and OEM9 bit7 without
+    touching the fan table, separate-fan state, or TCC.
+    """
+    if tdp not in TDP_CTL:
+        raise ValueError(f"custom TDP must be one of 25, 45, 65; got {tdp}")
+    ctl = TDP_CTL[tdp]
+    ec_rmw(ADDR_AP_OEM, set_bits=0x01)
+    ec_rmw(ADDR_AP_OEM10, set_bits=0x40)
+    ec_write(ADDR_MAFAN_CTL, ctl)
+    ec_rmw(ADDR_AP_OEM9, set_bits=0x80)
+
+
 # ── CLI registration ─────────────────────────────────────────────────
 
 def register(subparsers):

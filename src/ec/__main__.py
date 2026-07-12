@@ -9,6 +9,7 @@ Invoke via:
 import sys
 
 from . import mode, backlight, fan, setting
+from . import state
 
 
 def main():
@@ -19,6 +20,8 @@ def main():
     backlight.register(sub)
     fan.register(sub)
     setting.register(sub)
+    state.register(sub)
+    state.register_apply(sub)
     args = p.parse_args()
     args.func(args)
 
