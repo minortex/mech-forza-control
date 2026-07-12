@@ -64,6 +64,15 @@ def _status_label(ctl, custom):
     return MODE_CTL_LABELS.get(ctl, "?")
 
 
+def _detect_custom(oem9, oem10):
+    """Detect Custom mode using both OEM9 bit7 and OEM10 bit6.
+
+    Both bits are set for Custom and cleared for fixed modes in cmd_switch.
+    Using either-or is more robust than a single bit.
+    """
+    return bool((oem9 & 0x80) or (oem10 & 0x40))
+
+
 def _write_fan_table(cpu=None, gpu=None):
     cpu = cpu or DEFAULT_CPU_FAN
     gpu = gpu or DEFAULT_GPU_FAN
@@ -146,10 +155,11 @@ def cmd_status(args):
     pl1, pl2, pl4 = ec_read(ADDR_PL1), ec_read(ADDR_PL2), ec_read(ADDR_PL4)
     oem9, oem10 = ec_read(ADDR_AP_OEM9), ec_read(ADDR_AP_OEM10)
     oem57, ap = ec_read(ADDR_AP_OEM), ec_read(ADDR_AP_CTL)
-    custom = bool(oem9 & 0x80)
+    custom = _detect_custom(oem9, oem10)
     label = _status_label(ctl, custom)
     print("[EC Status]")
-    print(f"  EC[1873] CTL    = {ctl} (0x{ctl:02x})  {label}")
+    print(f"  Mode           = {label}")
+    print(f"  EC[1873] CTL    = {ctl} (0x{ctl:02x})")
     print(f"  EC[1830] OEM9   = {oem9} (0x{oem9:02x})  bit7={oem9>>7}")
     print(f"  EC[1831] OEM10  = {oem10} (0x{oem10:02x})  bit6={(oem10>>6)&1}")
     print(f"  EC[1857] AP_OEM = {oem57} (0x{oem57:02x})  bit0={oem57&1} (ApExist)")
