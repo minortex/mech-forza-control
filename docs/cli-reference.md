@@ -97,6 +97,28 @@ sudo uv run ec fan switch-speed STEPS
 
 写入 EC[1927]，bit7=使能，bit6:0=step。
 
+### 保存和恢复风扇状态
+
+```bash
+sudo uv run ec state save --config /etc/mechrevo/state.toml
+sudo uv run ec apply --config /etc/mechrevo/state.toml
+```
+
+`state save` 将当前 EC 风扇表、Custom 模式档位、TCC、独立风扇设置导出为 TOML 文件。
+`apply` 读取 TOML 文件并按正确顺序写回 EC。
+
+USB 关机充电和 AC Recovery 设置**不会**保存，因为它们的 EC 状态本身在重启后保持。
+
+### 开机自动恢复
+
+```bash
+sudo systemctl enable --now mechrevo-ec-apply.service
+```
+
+服务在模块加载完成后自动运行 `ec apply`，条件为 `/etc/mechrevo/state.toml` 存在。
+电源适配器和电池下均会执行。
+
+
 ### 恢复默认
 
 ```bash

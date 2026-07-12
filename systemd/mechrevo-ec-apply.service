@@ -1,0 +1,14 @@
+[Unit]
+Description=Restore Mechrevo EC fan and custom mode state
+After=systemd-modules-load.service systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+ConditionPathExists=/etc/mechrevo/state.toml
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/modprobe uniwill-laptop
+ExecStartPre=/usr/bin/test -e /sys/bus/platform/drivers/uniwill/INOU0000:00
+ExecStart=/usr/bin/ec apply --config /etc/mechrevo/state.toml
+
+[Install]
+WantedBy=multi-user.target

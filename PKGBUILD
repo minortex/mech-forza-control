@@ -1,8 +1,8 @@
 # Maintainer: texsd <texsd@users.noreply.github.com>
 
 pkgname=mechrevo-ec-git
-pkgver=0.1.0.r0.gc8646e3
-pkgrel=2
+pkgver=0.1.0.r1.g87ac7ee
+pkgrel=1
 pkgdesc="Mechrevo notebook EC direct control — power mode, fan curve, keyboard backlight"
 arch=('any')
 url="https://github.com/minortex/mech-forza-control"
@@ -25,4 +25,7 @@ build() {
 package() {
   cd "$srcdir/$pkgname"
   python -m installer --destdir="$pkgdir" dist/*.whl
+  install -Dm644 "$srcdir/$pkgname/systemd/mechrevo-ec-apply.service" \
+    "$pkgdir/usr/lib/systemd/system/mechrevo-ec-apply.service"
+  install -d -m755 "$pkgdir/etc/mechrevo"
 }
