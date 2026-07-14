@@ -11,22 +11,30 @@ def _int(s: str) -> int:
     return int(s, 0)
 
 
+def _fmt_addr(addr: int) -> str:
+    return f"0x{addr:04X} ({addr})"
+
+
+def _fmt_byte(value: int) -> str:
+    return f"0x{value:02X} ({value})"
+
+
 def cmd_read(args):
     val = ec_read(args.addr)
-    print(f"EC[{args.addr}] = {val} (0x{val:02X})")
+    print(f"EC[{_fmt_addr(args.addr)}] = {_fmt_byte(val)}")
 
 
 def cmd_write(args):
     before = ec_read(args.addr)
     ec_write(args.addr, args.value)
     after = ec_read(args.addr)
-    print(f"EC[{args.addr}] : {before} (0x{before:02X}) -> {after} (0x{after:02X})")
+    print(f"EC[{_fmt_addr(args.addr)}] : {_fmt_byte(before)} -> {_fmt_byte(after)}")
 
 
 def cmd_dump(args):
     for addr in range(args.start, args.start + args.count):
         v = ec_read(addr)
-        print(f"EC[{addr:4d}] = {v:3d} (0x{v:02X})")
+        print(f"EC[{_fmt_addr(addr)}] = {_fmt_byte(v)}")
 
 
 def main():
