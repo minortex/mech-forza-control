@@ -2,6 +2,8 @@
 
 通过读写 EC（Embedded Controller）寄存器直接控制机械革命（Mechrevo）笔记本的 CLI 工具。Python 编写，uv 管理依赖。
 
+使用 uv 需要向用户提权，同时读写寄存器到内存的映射需要 sudo。
+
 ## 请求权限
 
 运行任何 `uv run` 命令都需要跳出沙盒并 sudo（sudo 免密码），因为需要读写 `/dev/mem`。
