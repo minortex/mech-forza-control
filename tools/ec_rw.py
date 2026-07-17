@@ -19,8 +19,19 @@ def _fmt_byte(value: int) -> str:
     return f"0x{value:02X} ({value})"
 
 
+def _fmt_word(value: int) -> str:
+    return f"0x{value:04X} ({value})"
+
+
 def cmd_read(args):
     val = ec_read(args.addr)
+    low_addr = getattr(args, "low_addr", None)
+    if low_addr is not None:
+        low = ec_read(low_addr)
+        combined = (val << 8) | low
+        print(f"EC[{_fmt_addr(args.addr)}:{_fmt_addr(low_addr)}] = {_fmt_word(combined)}")
+        return
+
     print(f"EC[{_fmt_addr(args.addr)}] = {_fmt_byte(val)}")
 
 
@@ -41,8 +52,16 @@ def main():
     p = argparse.ArgumentParser(description="Low-level EC byte read / write / dump")
     sub = p.add_subparsers(dest="cmd")
 
-    rp = sub.add_parser("read", help="Read one EC byte")
-    rp.add_argument("addr", type=_int, help="EC address (decimal or 0x hex)")
+    rp = sub.add_parser("read", help="Read one EC byte or combine two bytes")
+    rp.add_argument(
+        "addr", type=_int, help="EC address, or high-byte address when two are given"
+    )
+    rp.add_argument(
+        "low_addr",
+        type=_int,
+        nargs="?",
+        help="Low-byte EC address; combined value is printed in decimal",
+    )
 
     wp = sub.add_parser("write", help="Write one EC byte")
     wp.add_argument("addr", type=_int, help="EC address (decimal or 0x hex)")
