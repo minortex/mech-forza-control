@@ -33,7 +33,7 @@ def _ensure_ap_exist():
     if v & 1:
         return False
     ec_write(ADDR_AP_OEM, v | 1)
-    print(f"  EC[{ADDR_AP_OEM}] ApExistFlag: 0x{v:02x} -> set bit0=1")
+    print(f"  EC[0x{ADDR_AP_OEM:04X}] ApExistFlag: 0x{v:02x} -> set bit0=1")
     return True
 
 
@@ -57,15 +57,15 @@ def _show_status():
     fl = _bit(f, 4)
     uc = _bit(t, 4)
     ac = _bit(a, 3)
-    print(f"  Win lock    (EC[{ADDR_STATUS_BYTE}] bit0): {wl} "
+    print(f"  Win lock    (EC[0x{ADDR_STATUS_BYTE:04X}] bit0): {wl} "
           f"({SETTING_LABELS['winlock']['on'] if wl else SETTING_LABELS['winlock']['off']})")
-    print(f"  Fn lock     (EC[{ADDR_BIOS_OEM_BYTE}] bit4): {fl} "
+    print(f"  Fn lock     (EC[0x{ADDR_BIOS_OEM_BYTE:04X}] bit4): {fl} "
           f"({SETTING_LABELS['fnlock']['on'] if fl else SETTING_LABELS['fnlock']['off']})")
-    print(f"  USB charger (EC[{ADDR_TRIGGER_BYTE}] bit4): {uc} "
+    print(f"  USB charger (EC[0x{ADDR_TRIGGER_BYTE:04X}] bit4): {uc} "
           f"({SETTING_LABELS['usbchg']['on'] if uc else SETTING_LABELS['usbchg']['off']})")
-    print(f"  AC recovery (EC[{ADDR_AP_OEM9}] bit3): {ac} "
+    print(f"  AC recovery (EC[0x{ADDR_AP_OEM9:04X}] bit3): {ac} "
           f"({SETTING_LABELS['acrecov']['on'] if ac else SETTING_LABELS['acrecov']['off']})")
-    print(f"  ApExistFlag (EC[{ADDR_AP_OEM}] bit0): {_bit(e, 0)}")
+    print(f"  ApExistFlag (EC[0x{ADDR_AP_OEM:04X}] bit0): {_bit(e, 0)}")
 
 
 # ── individual command handlers ──────────────────────────────────────
@@ -96,7 +96,7 @@ def cmd_fnlock(args):
     new = old | 0x10 if target else old & 0xEF
     ec_write(ADDR_BIOS_OEM_BYTE, new)
     after = ec_read(ADDR_BIOS_OEM_BYTE)
-    print(f"  EC[{ADDR_BIOS_OEM_BYTE}] : {old} (0x{old:02x}) -> {after} (0x{after:02x})")
+    print(f"  EC[0x{ADDR_BIOS_OEM_BYTE:04X}] : 0x{old:02x} -> 0x{after:02x}")
     print(f"  Fn lock bit4 = {_bit(after, 4)}")
 
 
@@ -125,7 +125,7 @@ def cmd_acrecov(args):
     new = old | 0x08 if target else old & 0xF7
     ec_write(ADDR_AP_OEM9, new)
     after = ec_read(ADDR_AP_OEM9)
-    print(f"  EC[{ADDR_AP_OEM9}]: 0x{old:02x} -> 0x{after:02x}")
+    print(f"  EC[0x{ADDR_AP_OEM9:04X}]: 0x{old:02x} -> 0x{after:02x}")
     print(f"  AC recovery bit3 = {_bit(after, 3)}")
 
 
@@ -136,7 +136,8 @@ def register(subparsers):
         "setting",
         help="Setting controls (Win lock, Fn lock, USB charger, AC recovery)",
     )
-    sub = s.add_subparsers(dest="setting_op", required=True)
+    s.set_defaults(func=cmd_status)
+    sub = s.add_subparsers(dest="setting_op")
 
     sub.add_parser("status", help="Show current setting states").set_defaults(func=cmd_status)
 

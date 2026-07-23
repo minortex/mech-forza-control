@@ -8,7 +8,7 @@ Invoke via:
 
 import sys
 
-from . import mode, backlight, fan, setting
+from . import mode, backlight, fan, setting, battery
 
 
 def main():
@@ -19,6 +19,7 @@ def main():
     backlight.register(sub)
     fan.register(sub)
     setting.register(sub)
+    battery.register(sub)
     args = p.parse_args()
     args.func(args)
 

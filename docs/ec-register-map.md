@@ -13,6 +13,7 @@
 | 文件 | 说明 |
 |------|------|
 | `ref/GCUService_decompiled/GCUService/Define/ECSpec.cs` | 官方常量名、地址、位枚举（最权威） |
+| `ref/GCUService_decompiled/GCUService/MyControlCenter/BatteryInfo.cs` | 控制台读取电池循环次数的实现 |
 | `ref/GCUService_decompiled/GCUService/Define/RamFan1p5_ECSpec.cs` | RamFan1p5 风扇表地址常量 |
 | `ref/wujie14xCC.go` | 社区 Go 实现，交叉验证地址 |
 | `docs/llm/ec-mode-switch.md` | 模式切换寄存器逆向记录 |
@@ -43,9 +44,46 @@
 | 1076-1077 | `0x0434` | `ADDR_EC_BST_BPR_BYTE1/2` | word LE | mA | 放电电流（正值=放电） |
 | 1078-1079 | `0x0436` | `ADDR_EC_BST_BRC_BYTE1/2` | word LE | mAh | 剩余容量 |
 | 1080-1081 | `0x0438` | `ADDR_EC_BST_BPV_BYTE1/2` | word LE | mV | 电池电压 |
-| 1186 | `0x04A2` | `ecBt1Temperature` | word LE | 0.1K | 温度，换算: `(raw - 2732) / 10` °C |
-| 1190-1191 | `0x04A6` | `ADDR_EC_BT1CycleCount_BYTE1/2` | word LE | 次 | 循环次数 |
+| 1186 | `0x04A2` | `ecBt1Temperature` | word LE | 0.1K | 温度，换算：`(raw - 2732) / 10` °C |
+| 1190-1191 | `0x04A6` | `ADDR_EC_BT1CycleCount_BYTE1/2` | uint16 LE | 次（原始计数） | EC 燃料计维护的电池循环计数 |
 | 1195 | `0x04AB` | `ecBt1RSOC` | byte | % | 相对充电状态 (0-100) |
+
+### 循环次数的定义（控制台实现）
+
+控制台的 `BatteryInfo.GetECBatteryCycleCount()` 直接读取上述两个 EC 字节：
+
+```text
+low  = EC[1190]       // BYTE1，低 8 位
+high = EC[1191]       // BYTE2，高 8 位
+count = (high << 8) | low
+```
+
+因此该值是一个无符号 16-bit Little-Endian 原始计数，范围为 `0..65535`，控制台将
+`count` 转成十进制后直接作为 `BatteryCycleCount` 展示。AMD 和 Intel 系统管理器都走
+这条读取路径；控制台没有根据 RSOC、容量或充放电事件自行计算，也没有使用 Windows
+电池 API 结构中的 `CycleCount` 字段。
+
+### `_BIX` SSDT 补丁
+
+固件 DSDT 只有 `_BIF`，没有提供包含循环次数的 `_BIX`。`acpi/ssdt-bix.dsl`
+在 `\\_SB.BAT0` 下补充 `_BIX`，并通过现有的 `\\_SB.INOU.ECRR` 分别读取
+`0x04A6`/`0x04A7`，将它们按 little-endian 组合后放入 `_BIX` 第 9 项（索引 8）。
+该 SSDT 依赖本机 DSDT 中的 `BAT0`、`INOU.ECRR` 和 `EC0` 命名空间，只适用于同一
+套 ACPI 表，不能直接用于其他机型。
+
+### 电池温度 ACPI 热区
+
+`_BIX` 标准包不包含温度字段，因此电池温度使用独立的 ACPI thermal zone
+`\\_TZ.BATZ` 暴露。`acpi/ssdt-battery-temp.dsl` 的 `_TMP` 通过现有的
+`\\_SB.INOU.ECRR` 读取 `EC[0x04A2..0x04A3]`，按 unsigned little-endian
+组合后直接返回；该寄存器单位是 0.1 K，正好符合 ACPI `_TMP` 的返回单位。
+
+该 SSDT 提供 60°C（3332，`0x0D04`）的 `_CRT`，使 Linux `acpi_thermal` 能够
+注册热区；它不提供主动/被动散热策略，不会改变现有的 CPU/系统热区。
+
+这里的“循环次数”是 EC/电池燃料计维护的累计值。反编译代码只证明了字段位置、字节序
+和展示方式，未揭示 EC 固件内部的递增规则；目前不能据此断言它严格等于“从 0% 到
+100% 的完整充放电次数”，也不能把一次插拔电源或一次充电直接视为增加 1 次。
 
 ### 其他只读信息
 
@@ -59,9 +97,71 @@
 | 1131-1132 | `0x046B` | `ADDR_EC_SECOND_FAN_RPM_BYTE2/1` | 副风扇 RPM（低位在 1131，高位在 1132） |
 | 1142 | `0x0476` | `BIOSFuncReg` | BIOS 功能寄存器 |
 | 1149 | `0x047D` | `ecOEM_SUB_VER2` | EC 子版本 2 |
-| 1168 | `0x0490` | `ecPowSource` | 电源来源 |
+| 1168 | `0x0490` | `ecPowSource` | 电源来源；固件拥有的状态字段，只读使用（见下文写权限边界） |
 | 1172 | `0x0494` | `ADDR_BATTERY_ALERT_BYTE` | 电池告警 |
 | 1183 | `0x049F` | `ADDR_BIOS_INFO_3_BYTE` | BIOS 信息 3 |
+
+---
+
+### `0x0490` 写权限边界
+
+`0x0490` 位于 H2RAM window 1 的 `0x0400–0x04FF` 主机可写区，因此 Linux `/dev/mem`、
+ACPI `ECRW` 和 `tools/ec_rw.py write` 从硬件 ACL 上都能向该地址发出真实写事务。这与表中
+将它标为 `R` 不矛盾：`R` 表示软件语义上它是 EC 固件拥有并持续刷新的电源状态，而不是
+供 AP 控制的配置寄存器。
+
+固件已确认读取其三个 bit 作为电池老化充电电压路径的 gate：
+
+- `bit 1 == 0` 时，`CODE:0xD1D1` 清零内部 `XRAM[0x09C7–0x09CA]` 两级计数器和
+  high-voltage stress，然后立即返回；
+- `bit 2` 控制辅助 hook；
+- `bit 0` 控制最终充电目标重算/写回，本机实测与 AC 在线状态同步。
+
+因此，写入后能够读回只证明 H2RAM 允许写，并不证明该值会保持或被状态机安全接受。尤其
+不建议通过清 `bit 1` 来重置老化状态：其他电源和电池路径也消费 `ecPowSource`，人为值可能
+与真实 AC/电池状态矛盾并触发非局部状态变化，固件也可能立即覆盖它。真正的 stress word
+位于未映射的 `0x0800–0x0BFF` 区，普通 `ec_rw.py` 不能直接读写。
+
+原始 main-bank1 机器码的全部直接写入引用进一步确认，这个字节由多个生产者共同维护：
+
+| 代码位置 | RMW 操作 | 直接效果 |
+|---:|---|---|
+| `0x1471` | `&= 0xFE` | 清 bit0 |
+| `0x1518` | `\|= 0x01; &= 0x77` | 置 bit0，清 bit3/bit7 |
+| `0x3B32` | `\|= 0x02; &= 0xEB` | 唯一确认的固件 bit1 置位函数；同时清 bit2/bit4 |
+| `0x3C69` | `&= 0xF9` | 清 bit1/bit2 |
+| `0x3D4A` | `\|= 0x08; &= 0x7F` | 置 bit3、清 bit7 |
+| `0x3D5D` | `\|= 0x80; &= 0xF7` | 置 bit7、清 bit3 |
+| `0x3D70/0x3DD9` | `&= 0x77` | 清 bit3/bit7，可将 `0x0F` 变成 `0x07` |
+| `0x5D30` | `\|= 0x04` | 置 bit2 |
+
+2026-07-19 实机写入 `0x0D` 后立即读回 `0x07`，而充电目标仍为 `17000 mV`。静态生产者
+可以解释这个结果：`0x3B32` 很快恢复 bit1，`0x5D30` 可恢复 bit2，随后 `0x3D70/3DD9` 清除
+bit3/bit7，组合结果即为 `0x07`。这不是一个能够独立保持的主机控制字段。
+
+`0x3B32` 先检查 `XRAM[0x05F3].1` 和 `CODE:0xC078(0x05F2)` 的计时/到期条件后才置 bit1；
+对应的 `0x3C69` 将 `0x05F2` 置为 3，并在另一到期条件满足时清 bit1/bit2。因此 bit1 的
+保持时间由电池会话状态机的计数器决定，不是主机写入后可独立保持的开关。
+
+继续追计数器来源后，main-bank0 ROM 表 `0x6BC0` 明确以三字节
+`{address_hi, address_lo, initial_value}` 初始化 `0x05F2–0x05F5` 为 5。完整用途为：
+
+| XRAM | 用途 |
+|---:|---|
+| `0x05F1` | bit0 的 AC 资格去抖；`0x14E8` 装入 200 或 1，`0x1444` 递减后清 bit0 |
+| `0x05F2` | 电池会话开始去抖；初值 5、移除路径重装 3，`0x3B32` 递减后置 bit1 |
+| `0x05F3` | 电池会话结束去抖；`0x3C69` 递减后清 bit1/bit2 |
+| `0x05F4/0x05F5` | power-source bit5/bit6 的成对去抖计数器 |
+
+电池拔插恢复 `0x0490` 的实际序列是：`0x3B32` 置 bit1、清 bit2 并清除 `0x0497` 会话
+标志，`0x5A8E` 重新初始化电池遥测，最后 `0x5D30` 置 bit2；移除侧由 `0x3C69` 同时清
+bit1/bit2。由此 bit1 更接近“电池会话存在/允许”，bit2 更接近“遥测初始化完成/辅助路径
+允许”。主机只写 `0x0490` 不会同步更新这些倒计时或会话缓存。
+
+老化清零的精确时序也已收窄：约 720 ms 周期任务无条件调用 `CODE:0xD1D1`；函数在读取
+ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会清零
+`XRAM[0x09C7–0x09CA]` 并返回；`0x05B9`、bit2 和 bit0 都位于该清零分支之后。因此一次
+短暂主机写入很可能在周期任务采样之前就被固件覆盖，不能作为可靠的 aging reset。
 
 ---
 
@@ -728,8 +828,10 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 | 1172 | `0x0494` | 电池告警 | R |
 | 1183 | `0x049F` | BIOS 信息 3 | R |
 | 1186 | `0x04A2` | 电池温度 | R |
-| 1190-1191 | `0x04A6` | 循环次数 | R |
+| 1190-1191 | `0x04A6` | 电池循环计数（uint16 LE，EC 原始值） | R |
 | 1195 | `0x04AB` | RSOC 百分比 | R |
+| 1314 | `0x522`  | EC 限制的充电电压 (低位) | R |
+| 1315 | `0x523`  | EC 限制的充电电压 (高位) | R |
 | 1798 | `0x0706` | AP BIOS 控制 | R/W |
 | 1830 | `0x0726` | Custom 标志 / AC Recovery | R/W |
 | 1831 | `0x0727` | Custom 灯 / PL4 双倍标志 | R/W |

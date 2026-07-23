@@ -56,11 +56,11 @@ def cmd_read(args):
     print(f"CPU Temp             : {cpu_t}\u00b0C")
     print(f"Main fan (Right) RPM : {mr}")
     print(f"Sec  fan (Left)  RPM : {sr}")
-    print(f"Control byte         : {ctrl} (0b{ctrl:08b})")
-    print(f"Duty Main(R)/Sec(L)  : {dm} / {ds}")
+    print(f"Control byte         : 0x{ctrl:02x} (0b{ctrl:08b})")
+    print(f"Duty Main(R)/Sec(L)  : {dm}% / {ds}%")
     print(
         f"Switch speed         : {_decode_switch_speed(sw)} "
-        f"(EC[{ADDR_FAN_SWITCH_SPEED}] = {sw}, 0x{sw:02x})"
+        f"(EC[0x{ADDR_FAN_SWITCH_SPEED:04X}] = 0x{sw:02x})"
     )
 
 
@@ -85,7 +85,7 @@ def cmd_switch_speed(args):
     got = ec_read(ADDR_FAN_SWITCH_SPEED)
     print(
         f"  Fan switch speed: {_decode_switch_speed(got)} "
-        f"(EC[{ADDR_FAN_SWITCH_SPEED}] = {got}, 0x{got:02x})"
+        f"(EC[0x{ADDR_FAN_SWITCH_SPEED:04X}] = 0x{got:02x})"
     )
 
 
@@ -107,8 +107,8 @@ def cmd_set(args):
         for i in range(16):
             ec_write(base + i, duty)
         first = ec_read(base)
-        print(f"  {label} fan duty: all 16 points set to {pct}% (EC value {duty})")
-        print(f"  EC[{base}] = {first} (0x{first:02x}) -- readback OK")
+        print(f"  {label} fan duty: all 16 points set to {pct}% (EC value 0x{duty:02x})")
+        print(f"  EC[0x{base:04X}] = 0x{first:02x} -- readback OK")
 
 
 def cmd_default(args):
@@ -129,7 +129,8 @@ def cmd_default(args):
 
 def register(subparsers):
     fn = subparsers.add_parser("fan", help="Fan monitoring")
-    sub = fn.add_subparsers(dest="fan_op", required=True)
+    fn.set_defaults(func=cmd_read)
+    sub = fn.add_subparsers(dest="fan_op")
     sub.add_parser("read", help="Read current fan status").set_defaults(func=cmd_read)
     mon = sub.add_parser("monitor", help="Continuously monitor")
     mon.add_argument("-i", "--interval", type=float, default=1.0)

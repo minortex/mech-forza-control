@@ -19,7 +19,7 @@ def _set_level(lvl):
     ec_write(ADDR_BACKLIGHT, reg)
     label = BACKLIGHT_LABELS.get(lvl)
     suffix = f" ({label})" if label else ""
-    print(f"EC[1932] = {reg} (0x{reg:02x})  level {lvl}{suffix}")
+    print(f"EC[0x{ADDR_BACKLIGHT:04X}] = 0x{reg:02x}  level {lvl}{suffix}")
 
 
 def _get_level():
@@ -31,7 +31,7 @@ def cmd_status(args):
     lvl = (reg >> 5) & 7
     label = BACKLIGHT_LABELS.get(lvl)
     suffix = f" ({label})" if label else ""
-    print(f"EC[1932] = {reg:3d} (0x{reg:02x})")
+    print(f"EC[0x{ADDR_BACKLIGHT:04X}] = 0x{reg:02x}")
     print(f"  Power:  {'ON' if not reg & 2 else 'OFF'}")
     print(f"  Level:  {lvl}{suffix}")
     print(f"  Bits:   {reg:08b}")
@@ -67,7 +67,8 @@ def register(subparsers):
     bl = subparsers.add_parser("backlight",
         help="Keyboard backlight control",
         epilog="4 brightness levels (0-4) for advanced players, use 'level N' to set directly.")
-    sub = bl.add_subparsers(dest="bl_op", required=True)
+    bl.set_defaults(func=cmd_status)
+    sub = bl.add_subparsers(dest="bl_op")
     sub.add_parser("status", help="Show backlight state").set_defaults(func=cmd_status)
     sub.add_parser("bright", help="Maximum brightness (010)").set_defaults(func=cmd_bright)
     sub.add_parser("dim", help="Dim (001)").set_defaults(func=cmd_dim)

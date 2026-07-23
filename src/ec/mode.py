@@ -109,7 +109,7 @@ def cmd_switch(args):
 
     ec_rmw(ADDR_AP_CTL, set_bits=0x04)
     v = ec_read(ADDR_AP_CTL)
-    print(f"  EC[{ADDR_AP_CTL}] AP_CTL = {v} (0x{v:02x})  bit2={'OK' if v&4 else 'FAIL'}")
+    print(f"  EC[0x{ADDR_AP_CTL:04X}] AP_CTL = 0x{v:02x}  bit2={'OK' if v&4 else 'FAIL'}")
 
     ec_rmw(ADDR_AP_OEM10, set_bits=0x40) if m["custom"] else ec_rmw(ADDR_AP_OEM10, clear_bits=0x40)
     ec_rmw(ADDR_AP_OEM, set_bits=0x01)
@@ -128,15 +128,15 @@ def cmd_switch(args):
     e57 = ec_read(ADDR_AP_OEM); e30 = ec_read(ADDR_AP_OEM9)
     e27 = ec_read(ADDR_FAN_SWITCH_SPEED); e89 = ec_read(ADDR_FANCTL_RESP)
     e26 = ec_read(ADDR_TCC); got = ec_read(ADDR_MAFAN_CTL)
-    print(f"  EC[1857] ApExist  = {e57} (0x{e57:02x})  bit0={e57&1}")
-    print(f"  EC[1830] OEM9     = {e30} (0x{e30:02x})  bit7={e30>>7}")
+    print(f"  EC[0x0741] ApExist  = 0x{e57:02x}  bit0={e57&1}")
+    print(f"  EC[0x0726] OEM9     = 0x{e30:02x}  bit7={e30>>7}")
     sw_steps = e27 & 0x7F
     if sw_steps:
         sw_status = f"{sw_steps} step(s), about {sw_steps * 2}s"
     else:
         sw_status = "EC default, about 7s observed"
-    print(f"  EC[1927] SwSpeed  = {e27}  {sw_status}")
-    print(f"  EC[1989] Respct   = {e89} (0x{e89:02x})  bit7={e89>>7}")
+    print(f"  EC[0x0787] SwSpeed  = 0x{e27:02x}  {sw_status}")
+    print(f"  EC[0x07C5] Respct   = 0x{e89:02x}  bit7={e89>>7}")
     if not m["custom"]:
         tcc_status = "not written in fixed mode"
     elif e26 == 0:
@@ -145,9 +145,9 @@ def cmd_switch(args):
         tcc_status = f"{e26 & 0x7f} (enabled, raw=0x{e26:02x})"
     else:
         tcc_status = f"{e26} (raw, enable bit clear)"
-    print(f"  EC[1926] TCC      = {tcc_status}")
+    print(f"  EC[0x0786] TCC      = {tcc_status}")
     ok = "OK" if got == ctl else f"FAIL expected {ctl}"
-    print(f"  EC[{ADDR_MAFAN_CTL}] CTL    = {got} (0x{got:02x})  {ok}")
+    print(f"  EC[0x{ADDR_MAFAN_CTL:04X}] CTL    = 0x{got:02x}  {ok}")
 
 
 def cmd_status(args):
@@ -159,28 +159,29 @@ def cmd_status(args):
     label = _status_label(ctl, custom)
     print("[EC Status]")
     print(f"  Mode           = {label}")
-    print(f"  EC[1873] CTL    = {ctl} (0x{ctl:02x})")
-    print(f"  EC[1830] OEM9   = {oem9} (0x{oem9:02x})  bit7={oem9>>7}")
-    print(f"  EC[1831] OEM10  = {oem10} (0x{oem10:02x})  bit6={(oem10>>6)&1}")
-    print(f"  EC[1857] AP_OEM = {oem57} (0x{oem57:02x})  bit0={oem57&1} (ApExist)")
-    print(f"  EC[1990] AP_CTL = {ap} (0x{ap:02x})  bit2={(ap>>2)&1}")
+    print(f"  EC[0x0751] CTL    = 0x{ctl:02x}")
+    print(f"  EC[0x0726] OEM9   = 0x{oem9:02x}  bit7={oem9>>7}")
+    print(f"  EC[0x0727] OEM10  = 0x{oem10:02x}  bit6={(oem10>>6)&1}")
+    print(f"  EC[0x0741] AP_OEM = 0x{oem57:02x}  bit0={oem57&1} (ApExist)")
+    print(f"  EC[0x07C6] AP_CTL = 0x{ap:02x}  bit2={(ap>>2)&1}")
     print(f"  EC PL readback  = {pl1}/{pl2}/{pl4}  (not authoritative for fixed modes/ryzenadj)")
 
 
 def cmd_dump(args):
     for addr in range(1829, 1829 + 16):
         v = ec_read(addr)
-        print(f"  EC[{addr}] = {v:3d} (0x{v:02x})")
+        print(f"  EC[0x{addr:04X}] = 0x{v:02x}")
     for addr in range(1989, 1989 + 6):
         v = ec_read(addr)
-        print(f"  EC[{addr}] = {v:3d} (0x{v:02x})")
+        print(f"  EC[0x{addr:04X}] = 0x{v:02x}")
 
 
 # ── CLI registration ─────────────────────────────────────────────────
 
 def register(subparsers):
     m = subparsers.add_parser("mode", help="Power mode operations")
-    sub = m.add_subparsers(dest="mode_op", required=True)
+    m.set_defaults(func=cmd_status)
+    sub = m.add_subparsers(dest="mode_op")
     for name, info in MODES.items():
         sp = sub.add_parser(name, help=info["desc"])
         sp.set_defaults(func=cmd_switch, mode_name=name)
