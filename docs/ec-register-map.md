@@ -53,8 +53,8 @@
 控制台的 `BatteryInfo.GetECBatteryCycleCount()` 直接读取上述两个 EC 字节：
 
 ```text
-low  = EC[1190]       // BYTE1，低 8 位
-high = EC[1191]       // BYTE2，高 8 位
+low  = XRAM[1190]       // BYTE1，低 8 位
+high = XRAM[1191]       // BYTE2，高 8 位
 count = (high << 8) | low
 ```
 
@@ -75,7 +75,7 @@ count = (high << 8) | low
 
 `_BIX` 标准包不包含温度字段，因此电池温度使用独立的 ACPI thermal zone
 `\\_TZ.BATZ` 暴露。`acpi/ssdt-battery-temp.dsl` 的 `_TMP` 通过现有的
-`\\_SB.INOU.ECRR` 读取 `EC[0x04A2..0x04A3]`，按 unsigned little-endian
+`\\_SB.INOU.ECRR` 读取 `XRAM[0x04A2..0x04A3]`，按 unsigned little-endian
 组合后直接返回；该寄存器单位是 0.1 K，正好符合 ACPI `_TMP` 的返回单位。
 
 该 SSDT 提供 60°C（3332，`0x0D04`）的 `_CRT`，使 Linux `acpi_thermal` 能够
@@ -169,13 +169,13 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 
 控制寄存器位于十进制 1798-2043，是模式切换、风扇曲线、功率限制的主要操作区域。
 
-### EC[1798] — AP BIOS 控制字节
+### XRAM[1798] — AP BIOS 控制字节
 
 `ADDR_AP_BIOS_CONTROL_BYTE` R/W
 
 位定义未完全探明。
 
-### EC[1830] — AP OEM 字节 9
+### XRAM[1830] — AP OEM 字节 9
 
 `ADDR_AP_OEM_BYTE9` R/W，RMW 写入
 
@@ -186,9 +186,9 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 | Bit | 掩码 | 功能 | 说明 |
 |-----|------|------|------|
 | bit3 | `0x08` | AC Recovery | 来电自动开机。BIOS 不支持 NVRAM 时的 fallback 路径；支持时走 NVRAM `ACRecoveryStatus` |
-| bit7 | `0x80` | Custom 模式标志 | `1` = Custom 模式活动。**必须在 EC[1873] 之后写入**，否则 EC 可能复位此寄存器 |
+| bit7 | `0x80` | Custom 模式标志 | `1` = Custom 模式活动。**必须在 XRAM[1873] 之后写入**，否则 EC 可能复位此寄存器 |
 
-### EC[1831] — AP OEM 字节 10
+### XRAM[1831] — AP OEM 字节 10
 
 `ADDR_AP_OEM_BYTE10_CUSTOM_LIGHT_TEST` / `ADDR_ESHUTTER_STATUS` / `ADDR_CPU_DOUBLE_FLAG_SUPPORT` R/W
 
@@ -201,13 +201,13 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 | bit6 | `0x40` | CustomerModeLight | `1` = Custom 模式指示灯亮 |
 | bit7 | `0x80` | PL4 双倍标志 | `1` = PL4 值需 x2 写入 EC。本机实测为 `0`（不需要翻倍） |
 
-### EC[1856] — 项目 ID
+### XRAM[1856] — 项目 ID
 
 `ADDR_PROJECT_ID_BYTE` R
 
 只读，项目标识。
 
-### EC[1857] — AP OEM 字节
+### XRAM[1857] — AP OEM 字节
 
 `ADDR_AP_OEM_BYTE` / `ADDR_FAN_ALERT_BYTE` R/W
 
@@ -219,13 +219,13 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 |-----|------|------|------|
 | bit0 | `0x01` | ApExistFlag | **最关键标志**。`1` = AP 在线，EC 接受模式指令；`0` = BIOS 接管。不设此位则 EC 不执行任何模式切换。每次操作前必须先置 `1` |
 
-### EC[1858] — 支持字节 5
+### XRAM[1858] — 支持字节 5
 
 `ADDR_SUPPORT_BYTE5` R
 
 位定义未完全探明。
 
-### EC[1859-1863] — MyFan2 PWM / TGP DynamicBoost（地址复用）
+### XRAM[1859-1863] — MyFan2 PWM / TGP DynamicBoost（地址复用）
 
 同一地址被两个路径复用：
 
@@ -239,7 +239,7 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 
 均为 R/W 字节值寄存器。
 
-### EC[1864] — LightBar 控制字节
+### XRAM[1864] — LightBar 控制字节
 
 `ADDR_LIGHTBAR_CONTROL_BYTE` R/W，`RGBLightBarCtrlByteFlag` 枚举
 
@@ -258,7 +258,7 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 | bit6 | `0x40` | Switch_Breath_ModernStandby |
 | bit7 | `0x80` | WelcomeLightMode |
 
-### EC[1865-1867] — LightBar RGB 分量
+### XRAM[1865-1867] — LightBar RGB 分量
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
@@ -266,11 +266,11 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 | 1866 | `ADDR_GREENBAR_CONTROL_BYTE` | 绿色分量，R/W |
 | 1867 | `ADDR_BLUEBAR_CONTROL_BYTE` | 蓝色分量，R/W |
 
-### EC[1868] — OEM 服务项目 ID
+### XRAM[1868] — OEM 服务项目 ID
 
 `ADDR_OEMSERVICE_PROJECT_ID_BYTE` R
 
-### EC[1870] — BIOS OEM 字节
+### XRAM[1870] — BIOS OEM 字节
 
 `ADDR_BIOS_OEM_BYTE` R/W，RMW 写入
 
@@ -282,7 +282,7 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 |-----|------|------|------|
 | bit4 | `0x10` | Fn Lock | `1` = Fn 键锁定，`0` = 解锁 |
 
-### EC[1873] — 风扇控制模式字节
+### XRAM[1873] — 风扇控制模式字节
 
 `ADDR_MAFAN_CONTROL_BYTE` R/W。这是一个**字节值寄存器**，不同值代表不同模式。
 
@@ -314,9 +314,9 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 | 160 | `0xA0` | `User_Fan_HiMode` | `1010_0000` | Office 25W |
 | 224 | `0xE0` | — | `1110_0000` | Office + FanBoost |
 
-**模式解码——需结合 EC[1830] bit7**
+**模式解码——需结合 XRAM[1830] bit7**
 
-| EC[1873] | EC[1830] bit7 | 模式 |
+| XRAM[1873] | XRAM[1830] bit7 | 模式 |
 |----------|---------------|------|
 | `0xA0` | 0 | Office |
 | `0x00` | 0 | Gaming |
@@ -325,28 +325,28 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 | `0x00` | 1 | Custom (Gaming 档) |
 | `0x10` | 1 | Custom (Turbo 档) |
 
-### EC[1875] — CPU VRM 持续电流限制
+### XRAM[1875] — CPU VRM 持续电流限制
 
 `ADDR_CPU_VRM_CURRENT_LIMIT_BYTE` R/W。字节值，单位 A。典型 65A。
 仅 AMD Custom 模式下高功率时写入。
 
-### EC[1876] — CPU VRM 峰值电流限制
+### XRAM[1876] — CPU VRM 峰值电流限制
 
 `ADDR_CPU_VRM_MAXI_CURRENT_LIMIT_BYTE` R/W。字节值，单位 A。典型 120A。
 
-### EC[1883] — 主风扇 Duty 读数
+### XRAM[1883] — 主风扇 Duty 读数
 
 `ADDR_EC_MAIN_FAN_L_DUTY_BYTE` R。字节值，`value / 2` ≈ 百分比。
 
-### EC[1884] — 副风扇 Duty 读数
+### XRAM[1884] — 副风扇 Duty 读数
 
 `ADDR_EC_MAIN_FAN_R_DUTY_BYTE` R。字节值，`value / 2` ≈ 百分比。
 
-### EC[1885] — 触发字节 2
+### XRAM[1885] — 触发字节 2
 
 `ADDR_TRIGGER_BYTE2` R/W。位定义未完全探明。
 
-### EC[1893] — 支持字节 1（硬件能力）
+### XRAM[1893] — 支持字节 1（硬件能力）
 
 `ADDR_SUPPORT_BYTE1` R，`SupportByteOneFlag` 枚举
 
@@ -365,7 +365,7 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 | bit6 | `0x40` | LightBar |
 | bit7 | `0x80` | FanBoost |
 
-### EC[1894] — 支持字节 2（硬件能力）
+### XRAM[1894] — 支持字节 2（硬件能力）
 
 `ADDR_SUPPORT_BYTE2` R，`SupportByteTwoFlag` 枚举
 
@@ -380,7 +380,7 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 | bit2 | `0x04` | RGBKeyBoard |
 | bit6 | `0x40` | MyBat（电池保护模式） |
 
-### EC[1895] — 触发字节
+### XRAM[1895] — 触发字节
 
 `ADDR_TRIGGER_BYTE` R/W，`TriggerByteFlag` 枚举。**被多个功能复用，写入必须 RMW。**
 
@@ -401,7 +401,7 @@ ApExistFlag 后立即检查 `0x0490.bit1`。只有采样当刻 bit1 为 0 才会
 
 E-Shutter 复用 bit3:4：`Camera_Off = 0x10` (bit4)，`Camera_On = 0x18` (bit3+bit4)。
 
-### EC[1896] — 状态字节
+### XRAM[1896] — 状态字节
 
 `ADDR_STAUTS_BYTE` R（EC 写入，AP 只读），`StatusByteOneFlag` 枚举
 
@@ -417,9 +417,9 @@ E-Shutter 复用 bit3:4：`Camera_Off = 0x10` (bit4)，`Camera_On = 0x18` (bit3+
 | bit3 | `0x08` | MacroKey | `1` = 宏键活动 |
 | bit4 | `0x10` | MyBatPowerBat | `1` = 电池保护活动 |
 
-**不要把状态位当控制位写入。** Win 锁通过 EC[1895] bit0 触发，EC 自动更新此寄存器。
+**不要把状态位当控制位写入。** Win 锁通过 XRAM[1895] bit0 触发，EC 自动更新此寄存器。
 
-### EC[1897-1903] — RGB 键盘颜色
+### XRAM[1897-1903] — RGB 键盘颜色
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
@@ -431,14 +431,14 @@ E-Shutter 复用 bit3:4：`Camera_Off = 0x10` (bit4)，`Camera_On = 0x18` (bit3+
 | 1902 | `ADDR_RGBKB_LEVEL_DEFAULT_B` | 默认蓝色，R |
 | 1903 | `ADDR_RGBKB_MUSIC_NO` | 音乐模式编号，R/W。`0xFE` = 启用 RGB 音乐模式，`0x00` = 禁用 |
 
-### EC[1905-1906] — ROM ID
+### XRAM[1905-1906] — ROM ID
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
 | 1905 | `ADDR_ROMID` | ROM ID 1，R |
 | 1906 | `ADDR_ROMID2` | ROM ID 2，R |
 
-### EC[1922] — BIOS OEM 字节 2
+### XRAM[1922] — BIOS OEM 字节 2
 
 `ADDR_BIOS_OEM_BYTE2` / `Light_SetToChinaMode` R/W
 
@@ -452,7 +452,7 @@ E-Shutter 复用 bit3:4：`Camera_Off = 0x10` (bit4)，`Camera_On = 0x18` (bit3+
 | bit3 | `0x08` | Fan3 支持 | `1` = 支持三风扇 |
 | bit4 | `0x10` | 默认模式标志 | — |
 
-### EC[1923-1925] — 当前 PL 值
+### XRAM[1923-1925] — 当前 PL 值
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
@@ -462,7 +462,7 @@ E-Shutter 复用 bit3:4：`Camera_Off = 0x10` (bit4)，`Camera_On = 0x18` (bit3+
 
 字节值，固定档下由 EC/BIOS 自动管理，只读语义。如需真正自定义 PL，用 `ryzenadj`。
 
-### EC[1926] — TCC 温度目标与使能
+### XRAM[1926] — TCC 温度目标与使能
 
 `ADDR_TimAP_TccOffset_Setting` R/W。被旧 MyFan3 路径复用为 `ADDR_L1_PWM_DEFAULT_MYFAN3`。
 
@@ -484,7 +484,7 @@ E-Shutter 复用 bit3:4：`Camera_Off = 0x10` (bit4)，`Camera_On = 0x18` (bit3+
 
 **警告**：bit7=1 且 bit6:0=0（即写入 `0x80`）是无效/危险状态，可导致 CPU 锁定在最低频率。
 
-### EC[1927] — 风扇切换速度
+### XRAM[1927] — 风扇切换速度
 
 `ADDR_TimAP_FanSwitchSpeedT100mSec` R/W。被旧 MyFan3 路径复用为 `ADDR_L2_PWM_DEFAULT_MYFAN3`。
 
@@ -506,10 +506,10 @@ E-Shutter 复用 bit3:4：`Camera_Off = 0x10` (bit4)，`Camera_On = 0x18` (bit3+
 | `0x81` | 启用 + 1 step ≈ 2s（工具默认值） |
 | `0x83` | 启用 + 3 step ≈ 6s |
 
-### EC[1928-1930] — MyFan3 PWM 默认值（旧路径）
+### XRAM[1928-1930] — MyFan3 PWM 默认值（旧路径）
 
-EC[1926-1930] 在旧 MyFan3 路径中作为 5 级 PWM 默认值读取。RamFan1p5 模式下
-EC[1926] 和 EC[1927] 已被复用，不要混用。
+XRAM[1926-1930] 在旧 MyFan3 路径中作为 5 级 PWM 默认值读取。RamFan1p5 模式下
+XRAM[1926] 和 XRAM[1927] 已被复用，不要混用。
 
 | 地址 | MyFan3 常量名 | RamFan1p5 用途 |
 |------|---------------|----------------|
@@ -519,7 +519,7 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 | 1929 | `ADDR_L4_PWM_DEFAULT_MYFAN3` / `ADDR_L1_PWM_DEFAULT_MYFAN2` | — |
 | 1930 | `ADDR_L5_PWM_DEFAULT_MYFAN3` / `ADDR_L2_PWM_DEFAULT_MYFAN2` | — |
 
-### EC[1931] — GPU D-State / MyFan3 GPU 设置
+### XRAM[1931] — GPU D-State / MyFan3 GPU 设置
 
 `ADDR_MYFAN3_GPU_SETTING` / `ADDR_L3_PWM_DEFAULT_MYFAN2` R/W
 
@@ -527,7 +527,7 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 |------|------|------|------|------|------|------|------|
 | ? | ? | ? | ? | GPU D-State bit2 | GPU D-State bit1 | GPU D-State bit0 | ? |
 
-### EC[1932] — 键盘背光控制
+### XRAM[1932] — 键盘背光控制
 
 `ADDR_SINGLEKBL_ENABLE` / `ADDR_AP_OEM_BYTE2` R/W
 
@@ -554,11 +554,11 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 亮度从亮到暗：`010` > `100` > `001` > `011` > `000`。
 键盘快捷键只在等级 0/2/4 循环。等级 1 和 3 是中间值，切入后会导致 EC 位错乱，需切回 0 恢复。
 
-### EC[1933] — MyFan2 PWM L5 默认值
+### XRAM[1933] — MyFan2 PWM L5 默认值
 
 `ADDR_L5_PWM_DEFAULT_MYFAN2` R/W
 
-### EC[1934] — 支持字节 6
+### XRAM[1934] — 支持字节 6
 
 `ADDR_SINGLEKBL_SUPPORTPOWER` / `ADDR_SUPPORT_BYTE6` R
 
@@ -570,7 +570,7 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 |-----|------|------|------|
 | bit3 | `0x08` | 电池保护模式支持 | `1` = 硬件支持三档充电模式切换 |
 
-### EC[1950-1952] — 风扇额外参数
+### XRAM[1950-1952] — 风扇额外参数
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
@@ -578,11 +578,11 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 | 1951 | `ADDR_MYFANI_MIN_TEMP` | 最低温度阈值，R/W |
 | 1952 | `ADDR_MYFANI_EXTRA_SPEED` | 额外风扇速度，R/W |
 
-### EC[1955] — BIOS OEM 字节 3
+### XRAM[1955] — BIOS OEM 字节 3
 
 `ADDR_BIOS_OEM_BYTE3` R
 
-### EC[1956] — AP BIOS 字节
+### XRAM[1956] — AP BIOS 字节
 
 `ADDR_AP_BIOS_BYTE` R/W。QC 平台 Fn 锁 bit3，通用平台不使用。
 
@@ -594,11 +594,11 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 |-----|------|------|------|
 | bit3 | `0x08` | QC Fn Lock | QC 平台专用，本机不使用 |
 
-### EC[1957] — AP OEM 字节 3
+### XRAM[1957] — AP OEM 字节 3
 
 `ADDR_AP_OEM_BYTE3` R/W。位定义未完全探明。
 
-### EC[1958] — 充电模式 / 触控板 LED
+### XRAM[1958] — 充电模式 / 触控板 LED
 
 `ADDR_AP_OEM_BYTE4` R/W，RMW 写入
 
@@ -621,7 +621,7 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 | 1 | 0 | Low (Health) | ~60% |
 | 1 | 1 | 未使用 | — |
 
-### EC[1959-1962] — BatterySaver 默认 PL 值
+### XRAM[1959-1962] — BatterySaver 默认 PL 值
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
@@ -630,11 +630,11 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 | 1961 | `ADDR_BATTERYSAVER_PL4_DEFAULT_VALUE` | BatterySaver PL4 默认值，R |
 | 1962 | `ADDR_BATTERYSAVER_D_DEFAULT_VALUE` | BatterySaver Duration 默认值，R |
 
-### EC[1963] — CCI 模式索引
+### XRAM[1963] — CCI 模式索引
 
 `ADDR_MyFanCCI_Mode_Index` R/W
 
-### EC[1968-1970] — CCI 模式 Profile
+### XRAM[1968-1970] — CCI 模式 Profile
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
@@ -642,7 +642,7 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 | 1969 | `ADDR_MyFanCCI_Mode_Profile2` | Profile 2，R/W |
 | 1970 | `ADDR_MyFanCCI_Mode_Profile3` | Profile 3，R/W |
 
-### EC[1977] — 充电上限百分比
+### XRAM[1977] — 充电上限百分比
 
 `ADDR_BATTERY_CHARGE_LIMIT_UP` R/W
 
@@ -655,7 +655,7 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 | bit6:0 | `0x7F` | 充电上限 % | `0` = 默认 100%，1-100 = 实际百分比 |
 | bit7 | `0x80` | 保留 | RMW 时保留原值 |
 
-### EC[1989] — AP OEM 字节 5
+### XRAM[1989] — AP OEM 字节 5
 
 `ADDR_AP_OEM_BYTE5` R/W
 
@@ -667,7 +667,7 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 |-----|------|------|------|
 | bit7 | `0x80` | FanControlRespective | `1` = CPU/GPU 风扇独立控制（`--separate`），`0` = 同步 |
 
-### EC[1990] — AP OEM 字节 6
+### XRAM[1990] — AP OEM 字节 6
 
 `ADDR_AP_OEM_BYTE6` R/W
 
@@ -679,24 +679,24 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 |-----|------|------|------|
 | bit2 | `0x04` | AP 风扇管理使能 | `1` = AP 侧风扇曲线生效；`0` = BIOS 接管 |
 
-**风扇表刷新序列**：清 bit2 → 写 EC[3840..3935] → 置 bit2
+**风扇表刷新序列**：清 bit2 → 写 XRAM[3840..3935] → 置 bit2
 
-### EC[1991-1992] — AP OEM 字节 7/8
+### XRAM[1991-1992] — AP OEM 字节 7/8
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
 | 1991 | `ADDR_AP_OEM_BYTE7` | R/W，位定义未探明 |
 | 1992 | `ADDR_AP_OEM_BYTE8` | R/W，位定义未探明 |
 
-### EC[1994] — BIOS OEM 字节 8
+### XRAM[1994] — BIOS OEM 字节 8
 
 `ADDR_BIOS_OEM_BYTE8` R
 
-### EC[1996] — 复合电源状态
+### XRAM[1996] — 复合电源状态
 
 `ADDR_COMPLEX_POWER_STATUS` R
 
-### EC[2000] — 充电下限百分比
+### XRAM[2000] — 充电下限百分比
 
 `ADDR_BATTERY_CHARGE_LIMIT_DOWN` R/W
 
@@ -709,14 +709,14 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 | bit6:0 | `0x7F` | 充电下限 % | `0` = 默认 95%，1-95 = 实际百分比 |
 | bit7 | `0x80` | 保留 | RMW 时保留原值 |
 
-### EC[2002-2003] — 模组 ID
+### XRAM[2002-2003] — 模组 ID
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
 | 2002 | `ADDR_ModuleID_GPU` | GPU 模组 ID，R |
 | 2003 | `ADDR_ModuleID` | 主模组 ID，R |
 
-### EC[2008-2010] — TCC 默认偏移
+### XRAM[2008-2010] — TCC 默认偏移
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
@@ -724,18 +724,18 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 | 2009 | `ADDR_OFFICE_TCC_OFFSET_DEFAULT_VALUE` | Office 模式默认值，R |
 | 2010 | `ADDR_TURBO_TCC_OFFSET_DEFAULT_VALUE` | Turbo 模式默认值，R |
 
-### EC[2022-2023] — 水冷控制
+### XRAM[2022-2023] — 水冷控制
 
 | 地址 | 官方常量名 | 说明 |
 |------|------------|------|
 | 2022 | `ADDR_LC_FAN_VALUE` | 水冷风扇值，R/W |
 | 2023 | `ADDR_LC_PUMP_VALUE` | 水冷泵值，R/W |
 
-### EC[2043] — 端口 ID 变更
+### XRAM[2043] — 端口 ID 变更
 
 `ADDR_CHANGE_PORT_ID_WKD` R/W
 
-### EC[3328] — 单区域模式
+### XRAM[3328] — 单区域模式
 
 `ADDR_AP_OEM_SingleZone` R/W
 
@@ -757,8 +757,8 @@ EC[1926] 和 EC[1927] 已被复用，不要混用。
 **Duty 值**：写入值 = 百分比 x 2。如 50% 写 100，100% 写 200。实测 readback 可能比写入少 1。
 
 **温度传感器**
-- CPU 曲线 (3840-3887) → CPU 内部 DTS (PECI)，控制 1 号风扇 (EC[1883])
-- GPU 曲线 (3888-3935) → EC 固件第二路温度输入，控制 2 号风扇 (EC[1884])
+- CPU 曲线 (3840-3887) → CPU 内部 DTS (PECI)，控制 1 号风扇 (XRAM[1883])
+- GPU 曲线 (3888-3935) → EC 固件第二路温度输入，控制 2 号风扇 (XRAM[1884])
 - 核显本的 "GPU" 温度源可能是 VRM / PCH / CPU 封装另一测温点
 
 **RamFan1p5 表状态控制**

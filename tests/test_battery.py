@@ -40,9 +40,9 @@ def test_battery_status_displays_default_limit(capsys):
     battery.cmd_status(Namespace())
 
     output = capsys.readouterr().out
-    assert "EC[0x07B9] = 0x00" in output
+    assert "XRAM[0x07B9] = 0x00" in output
     assert "Charge limit (setc): 100% (default)" in output
-    assert "EC[0x07A6] = 0x08" in output
+    assert "XRAM[0x07A6] = 0x08" in output
     assert "Charge mode (setv):  capacity" in output
     assert "Cycle count:         42" in output
     assert "Real-time voltage:   16818 mV" in output
@@ -68,9 +68,9 @@ def test_battery_status_displays_custom_limit(capsys):
     battery.cmd_status(Namespace())
 
     output = capsys.readouterr().out
-    assert "EC[0x07B9] = 0x50" in output
+    assert "XRAM[0x07B9] = 0x50" in output
     assert "Charge limit (setc): 80%" in output
-    assert "EC[0x07A6] = 0x18" in output
+    assert "XRAM[0x07A6] = 0x18" in output
     assert "Charge mode (setv):  balanced" in output
     assert "Cycle count:         100" in output
     assert "Real-time voltage:   16000 mV" in output
@@ -96,9 +96,9 @@ def test_battery_status_displays_custom_limit_with_bit7_set(capsys):
     battery.cmd_status(Namespace())
 
     output = capsys.readouterr().out
-    assert "EC[0x07B9] = 0xbc" in output
+    assert "XRAM[0x07B9] = 0xbc" in output
     assert "Charge limit (setc): 60%" in output
-    assert "EC[0x07A6] = 0x28" in output
+    assert "XRAM[0x07A6] = 0x28" in output
     assert "Charge mode (setv):  stationary" in output
     assert "Cycle count:         266" in output
     assert "Real-time voltage:   15500 mV" in output
@@ -116,7 +116,7 @@ def test_battery_setc_limit_zero(capsys):
     battery.cmd_setc(Namespace(limit=0))
 
     output = capsys.readouterr().out
-    assert "EC[0x07B9]: 0x80 -> 0x80" in output
+    assert "XRAM[0x07B9]: 0x80 -> 0x80" in output
     assert "Charge limit set to: 100% (default)" in output
     assert backend.values[ADDR_BATTERY_CHARGE_LIMIT_UP] == 0x80
     assert (backend.values[ADDR_AP_OEM] & 1) == 1
@@ -132,7 +132,7 @@ def test_battery_setc_limit_custom(capsys):
     battery.cmd_setc(Namespace(limit=80))
 
     output = capsys.readouterr().out
-    assert "EC[0x07B9]: 0x80 -> 0xd0" in output
+    assert "XRAM[0x07B9]: 0x80 -> 0xd0" in output
     assert "Charge limit set to: 80%" in output
     assert backend.values[ADDR_BATTERY_CHARGE_LIMIT_UP] == 0xd0
     assert (backend.values[ADDR_AP_OEM] & 1) == 1
@@ -148,7 +148,7 @@ def test_battery_setv_capacity(capsys):
     battery.cmd_setv(Namespace(mode="capacity"))
 
     output = capsys.readouterr().out
-    assert "EC[0x07A6]: 0x38 -> 0x08" in output
+    assert "XRAM[0x07A6]: 0x38 -> 0x08" in output
     assert "Charge mode set to: capacity" in output
     assert backend.values[ADDR_BATTERY_CHARGE_MODE] == 0x08
     assert (backend.values[ADDR_AP_OEM] & 1) == 1
@@ -164,7 +164,7 @@ def test_battery_setv_balanced(capsys):
     battery.cmd_setv(Namespace(mode="balanced"))
 
     output = capsys.readouterr().out
-    assert "EC[0x07A6]: 0x08 -> 0x18" in output
+    assert "XRAM[0x07A6]: 0x08 -> 0x18" in output
     assert "Charge mode set to: balanced" in output
     assert backend.values[ADDR_BATTERY_CHARGE_MODE] == 0x18
     assert (backend.values[ADDR_AP_OEM] & 1) == 1
@@ -180,7 +180,7 @@ def test_battery_setv_stationary(capsys):
     battery.cmd_setv(Namespace(mode="stationary"))
 
     output = capsys.readouterr().out
-    assert "EC[0x07A6]: 0x08 -> 0x28" in output
+    assert "XRAM[0x07A6]: 0x08 -> 0x28" in output
     assert "Charge mode set to: stationary" in output
     assert backend.values[ADDR_BATTERY_CHARGE_MODE] == 0x28
     assert (backend.values[ADDR_AP_OEM] & 1) == 1

@@ -20,7 +20,7 @@
 
 ## EC 寄存器
 
-### EC[1934] — 功能支持检测
+### XRAM[1934] — 功能支持检测
 
 ```csharp
 // BatteryProtection.cs:InitializeHealthSwitch()
@@ -36,7 +36,7 @@ this.BatteryProctionSupport = bitArray[3];  // bit3 = support flag
 
 当前实机值：`0x6c` (`0110 1100`)，bit3=1，支持。
 
-### EC[1958] — 充电模式控制 (ADDR_AP_OEM_BYTE4)
+### XRAM[1958] — 充电模式控制 (ADDR_AP_OEM_BYTE4)
 
 该寄存器同时控制触控板 LED（bit3）和充电模式（bits 4-5）。见 `BatteryProtection.cs` 三个 setter：
 
@@ -115,7 +115,7 @@ ACPI 通过 `acpi -V` 暴露的电池数据：
 Battery 0: design capacity 5200 mAh, last full capacity 4000 mAh = 76%
 ```
 
-`last full capacity` 由 EC 燃料计（Fuel Gauge）在 EC 内部 flash 中记录。充电模式切换通过 EC[1958] 控制 EC 何时停止充电，但燃料计的学习值是一种累积信息：
+`last full capacity` 由 EC 燃料计（Fuel Gauge）在 EC 内部 flash 中记录。充电模式切换通过 XRAM[1958] 控制 EC 何时停止充电，但燃料计的学习值是一种累积信息：
 
 - 设 Middle 模式后 EC 在 ~80%（4000 mAh）停充 → 燃料计逐渐将该值学为 "满"
 - 切回 High 模式后 EC 允许充至 100%，但燃料计需要一次**完整的空→满充电循环**才能重新学到 5200 mAh
@@ -133,15 +133,15 @@ ec setting battery low          — Health 模式 (~60%)
 ```
 
 切换序列：
-1. `_ensure_ap_exist()` — 设 EC[1857] bit0=1（按 `acrecov` 模式，确保 EC 接受上层指令）
-2. 写 `EC[1958]` bits [5:4] — 设置充电模式
+1. `_ensure_ap_exist()` — 设 XRAM[1857] bit0=1（按 `acrecov` 模式，确保 EC 接受上层指令）
+2. 写 `XRAM[1958]` bits [5:4] — 设置充电模式
 3. 可选写 NVRAM `BatteryLimitation` / `ChargeMaximumLimit` / `ChargeMinimumLimit` — 持久化备份
 
 `ec setting status` 应同步显示来自 ACPI sysfs 的实时电池数据（`capacity`、`status`、`charge_now`、`charge_full`）。
 
 ## 注意事项
 
-- `EC[1958]` 同时控制触控板 LED（bit3），切换充电模式时必须 RMW。
+- `XRAM[1958]` 同时控制触控板 LED（bit3），切换充电模式时必须 RMW。
 - 燃料计恢复需要完整充放电循环，切换模式后不会立即在 `acpi -V` 中反映。
 - NVRAM 字段通过 efivarfs 写入时需要先 `chattr -i` 清除 immutable 标志。
 - 与 Windows GCU Service 的差异：官方还维护注册表状态，Linux 直控不复制注册表行为。

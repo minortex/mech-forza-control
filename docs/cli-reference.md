@@ -18,7 +18,7 @@ sudo uv run mfc mode gaming    # Gaming (45W)
 sudo uv run mfc mode turbo     # Turbo (65W)
 ```
 
-固定模式由 EC[1873] 控制字节 + 默认风扇表决定，PL 由 EC/BIOS 自动管理。
+固定模式由 XRAM[1873] 控制字节 + 默认风扇表决定，PL 由 EC/BIOS 自动管理。
 
 ### Custom 模式
 
@@ -30,22 +30,22 @@ sudo uv run mfc mode custom [25|45|65] [--tcc TCC] [--separate]
 |------|------|
 | `25` `45` `65` | TDP 档位（可选，默认 45W） |
 | `--tcc TCC` | TCC 目标温度 0-100°C。省略则保持当前值，0 禁用 |
-| `--separate` | CPU/GPU 风扇独立控制（EC[1989] bit7） |
+| `--separate` | CPU/GPU 风扇独立控制（XRAM[1989] bit7） |
 
 Custom 模式的关键差异：
-- EC[1830] bit7 = 1（Custom 标志）
-- 写入默认风扇曲线到 EC[3840..3935]
+- XRAM[1830] bit7 = 1（Custom 标志）
+- 写入默认风扇曲线到 XRAM[3840..3935]
 - TCC 和独立风扇控制生效
 
 ### 状态查看
 
 ```bash
 sudo uv run mfc mode status    # 当前模式、CTL 字节、PL 读数
-sudo uv run mfc mode dump      # dump EC[1829..1844] + EC[1989..1994]
+sudo uv run mfc mode dump      # dump XRAM[1829..1844] + XRAM[1989..1994]
 ```
 
-`status` 输出包括 EC[1873] CTL 字节、EC[1830] OEM9、EC[1831] OEM10、
-EC[1857] ApExistFlag、EC[1990] AP_CTL、PL1/PL2/PL4 读数。
+`status` 输出包括 XRAM[1873] CTL 字节、XRAM[1830] OEM9、XRAM[1831] OEM10、
+XRAM[1857] ApExistFlag、XRAM[1990] AP_CTL、PL1/PL2/PL4 读数。
 
 `dump` 输出两段原始寄存器值，用于快速排查。
 
@@ -59,7 +59,7 @@ EC[1857] ApExistFlag、EC[1990] AP_CTL、PL1/PL2/PL4 读数。
 sudo uv run mfc fan read       # 当前 RPM、Duty、控制字节、切换速度
 ```
 
-输出：主/副风扇 RPM、EC[1873] 控制字节、主/副 Duty 读数、切换速度。
+输出：主/副风扇 RPM、XRAM[1873] 控制字节、主/副 Duty 读数、切换速度。
 
 ### 持续监控
 
@@ -95,7 +95,7 @@ sudo uv run mfc fan switch-speed STEPS
 | 3 | 约 6 秒 |
 | N | 约 N*2 秒 |
 
-写入 EC[1927]，bit7=使能，bit6:0=step。
+写入 XRAM[1927]，bit7=使能，bit6:0=step。
 
 ### 恢复默认
 
@@ -103,14 +103,14 @@ sudo uv run mfc fan switch-speed STEPS
 sudo uv run mfc fan default    # 恢复 config.py 中的出厂风扇曲线
 ```
 
-写入 UpT + DownT + Duty 到 EC[3840..3935]。
+写入 UpT + DownT + Duty 到 XRAM[3840..3935]。
 
 ---
 
 ## mfc backlight — 键盘背光
 
 ```bash
-sudo uv run mfc backlight status   # 当前 EC[1932] 值、亮度等级、位模式
+sudo uv run mfc backlight status   # 当前 XRAM[1932] 值、亮度等级、位模式
 sudo uv run mfc backlight off      # 关闭（等级 0）
 sudo uv run mfc backlight dim      # 暗（等级 1，bit7:5=001）
 sudo uv run mfc backlight bright   # 亮（等级 2，bit7:5=010）
@@ -120,7 +120,7 @@ sudo uv run mfc backlight level N  # 直接设置等级 0-4（高级用法）
 
 等级 0-4 对应 bit7:5 编码 `000`/`011`/`001`/`100`/`010`。
 键盘快捷键只在 0/2/4 循环。等级 1 和 3 是中间值，切入后会导致 EC 位错乱，
-需切回 0 恢复。EC[1932] bit4 写入时必须为 1。
+需切回 0 恢复。XRAM[1932] bit4 写入时必须为 1。
 
 ---
 
@@ -141,7 +141,7 @@ sudo uv run mfc setting winlock on     # 锁定 Win 键
 sudo uv run mfc setting winlock off    # 解锁
 ```
 
-通过 EC[1895] bit0 触发 toggle，状态在 EC[1896] bit0。
+通过 XRAM[1895] bit0 触发 toggle，状态在 XRAM[1896] bit0。
 
 ### Fn 锁
 
@@ -150,7 +150,7 @@ sudo uv run mfc setting fnlock on      # 锁定 Fn 键
 sudo uv run mfc setting fnlock off     # 解锁
 ```
 
-直接写 EC[1870] bit4。
+直接写 XRAM[1870] bit4。
 
 ### USB 关机充电
 
@@ -159,7 +159,7 @@ sudo uv run mfc setting usbchg on      # 开启关机 USB 充电
 sudo uv run mfc setting usbchg off     # 关闭
 ```
 
-直接写 EC[1895] bit4（RMW）。
+直接写 XRAM[1895] bit4（RMW）。
 
 ### AC Recovery（来电自动开机）
 
@@ -168,14 +168,14 @@ sudo uv run mfc setting acrecov on     # 开启
 sudo uv run mfc setting acrecov off    # 关闭
 ```
 
-自动设置 ApExistFlag（EC[1857] bit0），然后写 EC[1830] bit3。
+自动设置 ApExistFlag（XRAM[1857] bit0），然后写 XRAM[1830] bit3。
 这是 BIOS 不支持 NVRAM 时的 fallback 路径；支持时应走 NVRAM。
 
 ---
 
 ## mfc bat — 充电控制（电池寿命保护与限制电压）
 
-通过 EC[1977] 与 EC[1958] 寄存器直接设置电池的充电上限百分比与限制电压模式。
+通过 XRAM[1977] 与 XRAM[1958] 寄存器直接设置电池的充电上限百分比与限制电压模式。
 
 ### 查看充电限制状态
 
@@ -183,7 +183,7 @@ sudo uv run mfc setting acrecov off    # 关闭
 sudo uv run mfc bat status
 ```
 
-输出当前充电限制上限（setc，`EC[1977]`）、限制电压模式（setv，`EC[1958]`），以及实时电池信息。
+输出当前充电限制上限（setc，`XRAM[1977]`）、限制电压模式（setv，`XRAM[1958]`），以及实时电池信息。
 
 ### 设置充电上限百分比 (setc)
 
@@ -191,7 +191,7 @@ sudo uv run mfc bat status
 sudo uv run mfc bat setc <limit>
 ```
 
-其中 `<limit>` 为 0-100 的整数（写入时保留 `EC[1977]` bit7，并确保 `EC[1857]` bit0 的 `ApExistFlag` 处于开启状态）：
+其中 `<limit>` 为 0-100 的整数（写入时保留 `XRAM[1977]` bit7，并确保 `XRAM[1857]` bit0 的 `ApExistFlag` 处于开启状态）：
 - `0`：恢复默认的 100% 充电上限。
 - `1-100`：设置具体的充电限制百分比（例如设置 `80` 表示充电至 80% 即停止）。
 
@@ -201,7 +201,7 @@ sudo uv run mfc bat setc <limit>
 sudo uv run mfc bat setv <mode>
 ```
 
-通过设置 `EC[1958]` 的 bits [5:4] 来限制电池的充电截止电压（写入时保留触控板 LED 等其他 bit 状态）：
+通过设置 `XRAM[1958]` 的 bits [5:4] 来限制电池的充电截止电压（写入时保留触控板 LED 等其他 bit 状态）：
 - `capacity`：高电量模式 (100% 电压上限，bits [5:4] = `00`)。
 - `balanced`：均衡模式 (~80% 电压上限，bits [5:4] = `01`)。
 - `stationary`：固定保养模式 (~60% 电压上限，bits [5:4] = `10`)。

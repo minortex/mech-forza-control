@@ -1,4 +1,4 @@
-"""Battery charging limit control — EC[1977] register."""
+"""Battery charging limit control — XRAM[1977] register."""
 
 import argparse
 import os
@@ -19,7 +19,7 @@ def _ensure_ap_exist():
     v = ec_read(ADDR_AP_OEM)
     if not (v & 1):
         ec_write(ADDR_AP_OEM, v | 1)
-        print(f"  EC[0x{ADDR_AP_OEM:04X}] ApExistFlag: 0x{v:02x} -> set bit0=1")
+        print(f"  XRAM[0x{ADDR_AP_OEM:04X}] ApExistFlag: 0x{v:02x} -> set bit0=1")
 
 
 def _get_sysfs_battery_info():
@@ -116,9 +116,9 @@ def cmd_status(args):
     base_voltage = ec_read_word_be(ADDR_BATTERY_BASE_VOLTAGE, ADDR_BATTERY_BASE_VOLTAGE + 1)
     charge_target = ec_read_word(ADDR_BATTERY_CHARGE_TARGET)
     
-    print(f"EC[0x{ADDR_BATTERY_CHARGE_LIMIT_UP:04X}] = 0x{reg:02x}")
+    print(f"XRAM[0x{ADDR_BATTERY_CHARGE_LIMIT_UP:04X}] = 0x{reg:02x}")
     print(f"  Charge limit (setc): {limit_str}")
-    print(f"EC[0x{ADDR_BATTERY_CHARGE_MODE:04X}] = 0x{mode_reg:02x}")
+    print(f"XRAM[0x{ADDR_BATTERY_CHARGE_MODE:04X}] = 0x{mode_reg:02x}")
     print(f"  Charge mode (setv):  {mode_str}")
     print(f"  Cycle count:         {cycle_count}")
     print(f"  Real-time voltage:   {voltage} mV")
@@ -153,7 +153,7 @@ def cmd_setc(args):
     after_limit = after & 0x7F
     limit_str = "100% (default)" if after_limit == 0 else f"{after_limit}%"
     
-    print(f"  EC[0x{ADDR_BATTERY_CHARGE_LIMIT_UP:04X}]: 0x{reg:02x} -> 0x{after:02x}")
+    print(f"  XRAM[0x{ADDR_BATTERY_CHARGE_LIMIT_UP:04X}]: 0x{reg:02x} -> 0x{after:02x}")
     print(f"  Charge limit set to: {limit_str}")
 
 
@@ -180,7 +180,7 @@ def cmd_setv(args):
     else:
         after_mode = f"unknown (0x{after_bits:x})"
         
-    print(f"  EC[0x{ADDR_BATTERY_CHARGE_MODE:04X}]: 0x{reg:02x} -> 0x{after:02x}")
+    print(f"  XRAM[0x{ADDR_BATTERY_CHARGE_MODE:04X}]: 0x{reg:02x} -> 0x{after:02x}")
     print(f"  Charge mode set to: {after_mode}")
 
 

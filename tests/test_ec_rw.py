@@ -17,7 +17,7 @@ def test_read_two_addresses_combines_high_and_low_bytes(monkeypatch, capsys):
 
     ec_rw.cmd_read(Namespace(addr=100, low_addr=200))
 
-    assert capsys.readouterr().out == "EC[0x0064 (100):0x00C8 (200)] = 0x1234 (4660)\n"
+    assert capsys.readouterr().out == "XRAM[0x0064 (100):0x00C8 (200)] = 0x1234 (4660)\n"
 
 
 def test_read_one_address_keeps_byte_output(monkeypatch, capsys):
@@ -25,4 +25,4 @@ def test_read_one_address_keeps_byte_output(monkeypatch, capsys):
 
     ec_rw.cmd_read(Namespace(addr=100, low_addr=None))
 
-    assert capsys.readouterr().out == "EC[0x0064 (100)] = 0xAB (171)\n"
+    assert capsys.readouterr().out == "XRAM[0x0064 (100)] = 0xAB (171)\n"

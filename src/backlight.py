@@ -1,4 +1,4 @@
-"""Keyboard backlight control — EC[1932] register.
+"""Keyboard backlight control — XRAM[1932] register.
 
 Levels (bit7:5), brightest to dimmest:
   010 (2) > 100 (4) > 001 (1) > 011 (3) > 000 (0 off)
@@ -19,7 +19,7 @@ def _set_level(lvl):
     ec_write(ADDR_BACKLIGHT, reg)
     label = BACKLIGHT_LABELS.get(lvl)
     suffix = f" ({label})" if label else ""
-    print(f"EC[0x{ADDR_BACKLIGHT:04X}] = 0x{reg:02x}  level {lvl}{suffix}")
+    print(f"XRAM[0x{ADDR_BACKLIGHT:04X}] = 0x{reg:02x}  level {lvl}{suffix}")
 
 
 def _get_level():
@@ -31,7 +31,7 @@ def cmd_status(args):
     lvl = (reg >> 5) & 7
     label = BACKLIGHT_LABELS.get(lvl)
     suffix = f" ({label})" if label else ""
-    print(f"EC[0x{ADDR_BACKLIGHT:04X}] = 0x{reg:02x}")
+    print(f"XRAM[0x{ADDR_BACKLIGHT:04X}] = 0x{reg:02x}")
     print(f"  Power:  {'ON' if not reg & 2 else 'OFF'}")
     print(f"  Level:  {lvl}{suffix}")
     print(f"  Bits:   {reg:08b}")

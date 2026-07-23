@@ -33,8 +33,8 @@ sudo uv run mfc
 | `io.py` | EC 读写公共 API：`ec_read()`、`ec_write()`、`ec_rmw()`、`open_ec()`、`close()` |
 | `backends/` | 平台后端：`linux.py`（/dev/mem + acpi_call）、`windows.py`（ACPIDriver） |
 | `mode.py` | 电源模式切换：Office(25W) / Gaming(45W) / Turbo(65W) / Custom |
-| `fan.py` | 风扇曲线写入（EC[3840..3935]，6 组 x16 级） |
-| `backlight.py` | 键盘背光亮度（5 挡，EC[1932]） |
+| `fan.py` | 风扇曲线写入（XRAM[3840..3935]，6 组 x16 级） |
+| `backlight.py` | 键盘背光亮度（5 挡，XRAM[1932]） |
 | `setting.py` | 设置类功能：Win 锁、Fn 锁、USB 充电、AC Recovery、电池充电模式 |
 | `__main__.py` | CLI 入口，argparse 子命令分发 |
 
@@ -91,7 +91,7 @@ sudo uv run mfc
 |------|------|
 | `ec-mode-switch.md` | **最重要**：EC 模式切换寄存器全景，含完整寄存器地图、切换序列、风扇表格式、RPM/Duty 读数换算 |
 | `ec-setting-controls.md` | Win 锁/Fn 锁/USB 充电/AC Recovery 的 EC 寄存器和调用链逆向记录 |
-| `ec-battery-charging-findings.md` | 电池充电模式三档控制（EC[1958] bits[5:4]）、NVRAM 持久化、燃料计行为 |
+| `ec-battery-charging-findings.md` | 电池充电模式三档控制（XRAM[1958] bits[5:4]）、NVRAM 持久化、燃料计行为 |
 
 ### `docs/` 根目录 — 功能记录
 
@@ -99,7 +99,7 @@ sudo uv run mfc
 |------|------|
 | `ec-register-map.md` | **EC 寄存器功能总表**：所有已探明的寄存器地址、位定义、快速索引，开发时首选参考 |
 | `cli-reference.md` | **CLI 完整参考**：所有 `ec` 子命令、参数、用法示例，以及 `tools/` 脚本说明 |
-| `keyboard-backlight.md` | 键盘背光 EC[1932] 寄存器位定义和 5 挡亮度映射 |
+| `keyboard-backlight.md` | 键盘背光 XRAM[1932] 寄存器位定义和 5 挡亮度映射 |
 | `perf.md` | 三种固定模式的 SPL/sPPT/fPPT 功率值、Custom 模式行为、TCC 覆盖问题 |
 
 ## 运行和测试

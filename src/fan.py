@@ -60,7 +60,7 @@ def cmd_read(args):
     print(f"Duty Main(R)/Sec(L)  : {dm}% / {ds}%")
     print(
         f"Switch speed         : {_decode_switch_speed(sw)} "
-        f"(EC[0x{ADDR_FAN_SWITCH_SPEED:04X}] = 0x{sw:02x})"
+        f"(XRAM[0x{ADDR_FAN_SWITCH_SPEED:04X}] = 0x{sw:02x})"
     )
 
 
@@ -85,7 +85,7 @@ def cmd_switch_speed(args):
     got = ec_read(ADDR_FAN_SWITCH_SPEED)
     print(
         f"  Fan switch speed: {_decode_switch_speed(got)} "
-        f"(EC[0x{ADDR_FAN_SWITCH_SPEED:04X}] = 0x{got:02x})"
+        f"(XRAM[0x{ADDR_FAN_SWITCH_SPEED:04X}] = 0x{got:02x})"
     )
 
 
@@ -108,7 +108,7 @@ def cmd_set(args):
             ec_write(base + i, duty)
         first = ec_read(base)
         print(f"  {label} fan duty: all 16 points set to {pct}% (EC value 0x{duty:02x})")
-        print(f"  EC[0x{base:04X}] = 0x{first:02x} -- readback OK")
+        print(f"  XRAM[0x{base:04X}] = 0x{first:02x} -- readback OK")
 
 
 def cmd_default(args):

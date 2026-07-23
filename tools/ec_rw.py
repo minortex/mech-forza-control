@@ -29,23 +29,23 @@ def cmd_read(args):
     if low_addr is not None:
         low = ec_read(low_addr)
         combined = (val << 8) | low
-        print(f"EC[{_fmt_addr(args.addr)}:{_fmt_addr(low_addr)}] = {_fmt_word(combined)}")
+        print(f"XRAM[{_fmt_addr(args.addr)}:{_fmt_addr(low_addr)}] = {_fmt_word(combined)}")
         return
 
-    print(f"EC[{_fmt_addr(args.addr)}] = {_fmt_byte(val)}")
+    print(f"XRAM[{_fmt_addr(args.addr)}] = {_fmt_byte(val)}")
 
 
 def cmd_write(args):
     before = ec_read(args.addr)
     ec_write(args.addr, args.value)
     after = ec_read(args.addr)
-    print(f"EC[{_fmt_addr(args.addr)}] : {_fmt_byte(before)} -> {_fmt_byte(after)}")
+    print(f"XRAM[{_fmt_addr(args.addr)}] : {_fmt_byte(before)} -> {_fmt_byte(after)}")
 
 
 def cmd_dump(args):
     for addr in range(args.start, args.start + args.count):
         v = ec_read(addr)
-        print(f"EC[{_fmt_addr(addr)}] = {_fmt_byte(v)}")
+        print(f"XRAM[{_fmt_addr(addr)}] = {_fmt_byte(v)}")
 
 
 def main():
