@@ -15,7 +15,7 @@ On Linux: need `sudo` to write `/dev/mem`
 
 ```bash
 cd mechrevo-forza-control
-sudo uv run ec
+sudo uv run mfc
 ```
 
 Help information via `-h` parameters.

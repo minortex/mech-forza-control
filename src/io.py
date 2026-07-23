@@ -9,8 +9,8 @@ Platform backends:
 import atexit
 import platform
 
-from ec.backends.base import EcBackend
-from ec.config import EC_MMIO_MAX, EC_MMIO_MIN
+from src.backends.base import EcBackend
+from src.config import EC_MMIO_MAX, EC_MMIO_MIN
 
 _BACKEND: EcBackend | None = None
 _ATEXIT_REGISTERED = False
@@ -18,11 +18,11 @@ _ATEXIT_REGISTERED = False
 
 def _select_backend() -> EcBackend:
     if platform.system() == "Windows":
-        from ec.backends import windows
+        from src.backends import windows
 
         return windows.select_backend()
 
-    from ec.backends import linux
+    from src.backends import linux
 
     return linux.select_backend()
 
@@ -93,10 +93,10 @@ def ec_rmw(addr: int, set_bits: int = 0, clear_bits: int = 0) -> int:
 
 def is_ac_power() -> bool:
     if platform.system() == "Windows":
-        from ec.backends import windows
+        from src.backends import windows
 
         return windows.is_ac_power()
 
-    from ec.backends import linux
+    from src.backends import linux
 
     return linux.is_ac_power()

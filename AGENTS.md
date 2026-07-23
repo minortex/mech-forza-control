@@ -9,7 +9,7 @@
 运行任何 `uv run` 命令都需要跳出沙盒并 sudo（sudo 免密码），因为需要读写 `/dev/mem`。
 
 ```bash
-sudo uv run ec
+sudo uv run mfc
 ```
 
 ## 目录结构

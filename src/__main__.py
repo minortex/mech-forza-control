@@ -1,10 +1,4 @@
-"""CLI entry point — dispatch to subcommand handlers.
-
-Invoke via:
-  python -m ec mode gaming
-  python -m ec backlight on
-  python -m ec fan read
-"""
+"""CLI entry point — dispatch to subcommand handlers."""
 
 import sys
 
@@ -13,7 +7,7 @@ from . import mode, backlight, fan, setting, battery
 
 def main():
     import argparse
-    p = argparse.ArgumentParser(prog="ec", description="Mechrevo EC direct control")
+    p = argparse.ArgumentParser(prog="mfc", description="Mechrevo EC direct control")
     sub = p.add_subparsers(title="commands", dest="command", required=True)
     mode.register(sub)
     backlight.register(sub)

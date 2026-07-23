@@ -1,9 +1,9 @@
 # Maintainer: texsd <texsd@users.noreply.github.com>
 
-pkgname=mechrevo-ec-git
+pkgname=mech-forza-control-git
 pkgver=0.1.0.r0.gc8646e3
 pkgrel=2
-pkgdesc="Mechrevo notebook EC direct control — power mode, fan curve, keyboard backlight"
+pkgdesc="Mechrevo notebook EC direct control CLI (MFC) — power mode, fan curve, keyboard backlight"
 arch=('any')
 url="https://github.com/minortex/mech-forza-control"
 license=('MIT')

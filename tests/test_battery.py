@@ -1,9 +1,9 @@
 import pytest
 from argparse import Namespace, ArgumentTypeError
 
-from ec import battery
-from ec import io
-from ec.config import (
+from src import battery
+from src import io
+from src.config import (
     ADDR_AP_OEM,
     ADDR_BATTERY_CHARGE_LIMIT_UP,
     ADDR_BATTERY_CHARGE_MODE,

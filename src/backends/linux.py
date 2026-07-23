@@ -4,7 +4,7 @@ import glob
 import mmap
 import os
 
-from ec.config import EC_MMIO_BASE, EC_MMIO_SIZE
+from src.config import EC_MMIO_BASE, EC_MMIO_SIZE
 
 
 class DevMemBackend:

@@ -1,9 +1,9 @@
 import pytest
 from argparse import Namespace
 
-from ec import fan, mode
-from ec import io
-from ec.config import (
+from src import fan, mode
+from src import io
+from src.config import (
     ADDR_MAFAN_CTL,
     ADDR_AP_OEM9,
     ADDR_FAN_SWITCH_SPEED,

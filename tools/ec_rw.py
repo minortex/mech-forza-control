@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from ec.io import ec_read, ec_write
+from src.io import ec_read, ec_write
 
 
 def _int(s: str) -> int:
