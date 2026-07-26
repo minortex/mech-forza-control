@@ -11,6 +11,10 @@ from .config import (
     ADDR_MAIN_FAN_INDEX,
     ADDR_MAIN_FAN_RPM_HI,
     ADDR_MAIN_FAN_RPM_LO,
+    ADDR_PL1,
+    ADDR_PL2,
+    ADDR_PL4,
+    ADDR_TCC,
     ADDR_SECOND_FAN_DUTY,
     ADDR_SECOND_FAN_INDEX,
     ADDR_SECOND_FAN_RPM_HI,
@@ -26,6 +30,7 @@ from .config import (
     DEFAULT_CPU_FAN,
     DEFAULT_GPU_FAN,
 )
+from .cli import prefix_choice
 from .io import ec_read, ec_rmw, ec_write
 
 ROM_TABLE_MODES = {
@@ -75,7 +80,7 @@ def _read_control_state():
 def _format_gate_bits(state):
     return (
         f"A={int(state['ap_exist'])} C={int(state['custom'])} "
-        f"M={int(state['fan_mgmt'])} I={int(state['independent'])}"
+        f"M={int(state['fan_mgmt'])}"
     )
 
 
@@ -91,10 +96,6 @@ def _print_gate_details(state):
     print(
         f"Gate FanMgmt         : {int(state['fan_mgmt'])} "
         f"(XRAM[0x{ADDR_AP_CTL:04X}].bit2)"
-    )
-    print(
-        f"Gate Independent     : {int(state['independent'])} "
-        f"(XRAM[0x{ADDR_FANCTL_RESP:04X}].bit7)"
     )
 
 
@@ -132,6 +133,13 @@ def _rom_table_load_mode(second_duty):
 def cmd_read(args):
     cpu_t, mr, sr, dm, ds, sw = _read()
     state = _read_control_state()
+    print(f"CPU Temp             : {cpu_t}\u00b0C")
+    print(f"Main fan (Right) RPM : {mr}")
+    print(f"Sec  fan (Left)  RPM : {sr}")
+    print(
+        f"Duty Main(R)/Sec(L)  : {_format_duty(dm)} / {_format_duty(ds)} "
+        f"(raw {dm} / {ds})"
+    )
     print(
         "Control path         : "
         + (
@@ -140,7 +148,10 @@ def cmd_read(args):
             else "EC firmware/ROM fallback"
         )
     )
-    _print_gate_details(state)
+    print(
+        f"Switch speed         : {_decode_switch_speed(sw)} "
+        f"(XRAM[0x{ADDR_FAN_SWITCH_SPEED:04X}] = 0x{sw:02x})"
+    )
     print(
         "Fan relationship     : "
         + (
@@ -157,26 +168,16 @@ def cmd_read(args):
         else "clear"
     )
     print(f"Zero-RPM warning     : {warning} (XRAM[0x{ADDR_AP_OEM:04X}].bit5)")
-    print(f"CPU Temp             : {cpu_t}\u00b0C")
-    print(f"Main fan (Right) RPM : {mr}")
-    print(f"Sec  fan (Left)  RPM : {sr}")
-    print(
-        f"Duty Main(R)/Sec(L)  : {_format_duty(dm)} / {_format_duty(ds)} "
-        f"(raw {dm} / {ds})"
-    )
-    print(
-        f"Switch speed         : {_decode_switch_speed(sw)} "
-        f"(XRAM[0x{ADDR_FAN_SWITCH_SPEED:04X}] = 0x{sw:02x})"
-    )
+    _print_gate_details(state)
 
 
 def cmd_monitor(args):
     iv = args.interval
     print(f"Monitoring every {iv}s, Ctrl+C to stop")
-    print("Gates: A=APExist C=Custom M=FanMgmt I=Independent\n")
+    print("Gates: A=APExist C=Custom M=FanMgmt\n")
     hdr = (
         f"{'Time':<8} | {'CPU':>5} | {'Path':<4} | {'Link':<4} | "
-        f"{'Warn':<4} | {'Gates':<15} | {'MainRPM':>7} | {'SecRPM':>7} | "
+        f"{'Warn':<4} | {'Gates':<11} | {'MainRPM':>7} | {'SecRPM':>7} | "
         f"{'DutyM(R)':>8} | {'DutyS(L)':>8}"
     )
     print(hdr)
@@ -191,7 +192,7 @@ def cmd_monitor(args):
             gate_bits = _format_gate_bits(state)
             print(
                 f"{time.strftime('%H:%M:%S'):<8} | {cpu_t:>3}\u00b0C | "
-                f"{path:<4} | {link:<4} | {warning:<4} | {gate_bits:<15} | "
+                f"{path:<4} | {link:<4} | {warning:<4} | {gate_bits:<11} | "
                 f"{mr:>7} | {sr:>7} | {_format_duty(dm):>8} | "
                 f"{_format_duty(ds):>8}",
                 flush=True,
@@ -202,6 +203,10 @@ def cmd_monitor(args):
 
 
 def cmd_table(args):
+    if getattr(args, "reset", False):
+        cmd_default(args)
+        return
+
     state = _read_control_state()
     main_index = ec_read(ADDR_MAIN_FAN_INDEX)
     second_index = ec_read(ADDR_SECOND_FAN_INDEX)
@@ -311,24 +316,119 @@ def _set_independent_gate(enabled):
     )
 
 
-def cmd_set(args):
-    """Force fan to a fixed speed percentage by writing all duty-table entries."""
-    pcts = args.percentage
-    if len(pcts) == 1:
-        cpu_pct = gpu_pct = pcts[0]
-        enable_independent = False
-    elif len(pcts) == 2:
-        cpu_pct, gpu_pct = pcts
-        enable_independent = True
+def _clear_non_fan_overrides():
+    """Neutralize AP Custom inputs that must not be activated by fan control."""
+    registers = (
+        (ADDR_PL1, "PL1"),
+        (ADDR_PL2, "PL2"),
+        (ADDR_PL4, "PL4"),
+        (ADDR_TCC, "TCC"),
+    )
+    changed = []
+    for addr, name in registers:
+        previous = ec_read(addr)
+        ec_write(addr, 0)
+        if previous:
+            changed.append(f"{name}=0x{previous:02x}")
+    if changed:
+        print("  Cleared non-fan AP overrides: " + ", ".join(changed))
     else:
-        raise ValueError(f"expected 1 or 2 percentages, got {len(pcts)}")
+        print("  Non-fan AP overrides: clear (PL1/PL2/PL4/TCC)")
 
+
+def _enable_ap_fan_control(clear_overrides=True):
+    """Enable the minimum confirmed gates for the RAM fan tables."""
+    # Keep the fan worker away from a table while ownership is changing, and
+    # clear shared Custom inputs before enabling 0x0727.bit6.
+    ec_rmw(ADDR_AP_CTL, clear_bits=0x04)
+    if clear_overrides:
+        _clear_non_fan_overrides()
+    ec_rmw(ADDR_AP_OEM, set_bits=0x01)
+    ec_rmw(ADDR_AP_OEM10, set_bits=0x40)
+    ec_rmw(ADDR_AP_CTL, set_bits=0x04)
+
+    state = _read_control_state()
+    status = "active" if state["table_active"] else "FAILED"
+    print(f"  Fan authority: AP RAM table ({status})")
+    _print_gate_details(state)
+
+
+def _disable_ap_fan_control():
+    """Return fan lookup to EC firmware/ROM without changing the base mode."""
+    ec_rmw(ADDR_AP_CTL, clear_bits=0x04)
+    ec_rmw(ADDR_AP_OEM10, clear_bits=0x40)
+
+    state = _read_control_state()
+    status = "active" if not state["table_active"] else "FAILED"
+    print(f"  Fan authority: EC firmware/ROM ({status})")
+    _print_gate_details(state)
+
+
+def cmd_ap(args):
+    """Use the current RAM fan tables under AP control."""
+    _enable_ap_fan_control()
+
+
+def cmd_bios(args):
+    """Release RAM fan-table control to EC firmware/ROM."""
+    _disable_ap_fan_control()
+
+
+def cmd_control(args):
+    """Select whether AP RAM tables or EC firmware own fan control."""
+    if args.authority == "ap":
+        cmd_ap(args)
+    else:
+        cmd_bios(args)
+
+
+def _parse_set_values(percentages, explicit_relationship):
+    if len(percentages) > 2 or (not percentages and explicit_relationship is None):
+        raise ValueError(
+            "fan set expects -i/-l and/or one/two percentages"
+        )
+
+    if not percentages:
+        return None, explicit_relationship
+
+    if len(percentages) == 1:
+        cpu_pct = gpu_pct = percentages[0]
+        inferred_relationship = False
+    else:
+        cpu_pct, gpu_pct = percentages
+        inferred_relationship = True
+    relationship = (
+        inferred_relationship
+        if explicit_relationship is None
+        else explicit_relationship
+    )
+    return (cpu_pct, gpu_pct), relationship
+
+
+def cmd_set(args):
+    """Set fixed duty values or select linked/independent table lookup."""
+    percentages, enable_independent = _parse_set_values(
+        args.percentages,
+        args.independent,
+    )
+
+    if percentages is None:
+        _set_independent_gate(enable_independent)
+        _enable_ap_fan_control()
+        return
+
+    cpu_pct, gpu_pct = percentages
     for pct, label in ((cpu_pct, "CPU"), (gpu_pct, "GPU")):
         if pct < 0 or pct > 100:
             raise ValueError(f"{label} fan percentage must be 0-100, got {pct}")
 
-    for pct, label, base in ((cpu_pct, "CPU", ADDR_CPU_FAN_DUTY_BASE),
-                              (gpu_pct, "GPU", ADDR_GPU_FAN_DUTY_BASE)):
+    # Suspend table lookup so EC cannot observe a partially updated table.
+    ec_rmw(ADDR_AP_CTL, clear_bits=0x04)
+    _clear_non_fan_overrides()
+    for pct, label, base in (
+        (cpu_pct, "CPU", ADDR_CPU_FAN_DUTY_BASE),
+        (gpu_pct, "GPU", ADDR_GPU_FAN_DUTY_BASE),
+    ):
         duty = pct * 2
         for i in range(16):
             ec_write(base + i, duty)
@@ -337,10 +437,13 @@ def cmd_set(args):
         print(f"  XRAM[0x{base:04X}] = 0x{first:02x} -- readback OK")
 
     _set_independent_gate(enable_independent)
+    _enable_ap_fan_control(clear_overrides=False)
 
 
 def cmd_default(args):
-    """Restore the default fan curves from config."""
+    """Restore configured default curves while preserving linked/independent."""
+    independent = bool(ec_read(ADDR_FANCTL_RESP) & 0x80)
+
     def _restore(base_upt, base_dnt, base_duty, table):
         for i in range(16):
             ec_write(base_upt + i, table["upT"][i + 1] if i < 15 else 255)
@@ -348,49 +451,85 @@ def cmd_default(args):
                 ec_write(base_dnt + i + 1, table["dnT"][i])
             ec_write(base_duty + i, min(table["duty"][i], 100) * 2)
 
-    _restore(ADDR_CPU_FAN_UPT_BASE, ADDR_CPU_FAN_DNT_BASE,
-             ADDR_CPU_FAN_DUTY_BASE, DEFAULT_CPU_FAN)
-    _restore(ADDR_GPU_FAN_UPT_BASE, ADDR_GPU_FAN_DNT_BASE,
-             ADDR_GPU_FAN_DUTY_BASE, DEFAULT_GPU_FAN)
-    print("  Fan tables restored to factory defaults (UpT, DownT, Duty)")
-    _set_independent_gate(getattr(args, "independent", False))
+    ec_rmw(ADDR_AP_CTL, clear_bits=0x04)
+    _clear_non_fan_overrides()
+    _restore(
+        ADDR_CPU_FAN_UPT_BASE,
+        ADDR_CPU_FAN_DNT_BASE,
+        ADDR_CPU_FAN_DUTY_BASE,
+        DEFAULT_CPU_FAN,
+    )
+    _restore(
+        ADDR_GPU_FAN_UPT_BASE,
+        ADDR_GPU_FAN_DNT_BASE,
+        ADDR_GPU_FAN_DUTY_BASE,
+        DEFAULT_GPU_FAN,
+    )
+    print("  Fan tables restored to configured defaults (UpT, DownT, Duty)")
+    _set_independent_gate(independent)
+    _enable_ap_fan_control(clear_overrides=False)
 
 
 def register(subparsers):
-    fn = subparsers.add_parser("fan", help="Fan monitoring")
+    fn = subparsers.add_parser("fan", help="Fan monitoring and control")
     fn.set_defaults(func=cmd_read)
     sub = fn.add_subparsers(dest="fan_op")
     sub.add_parser("read", help="Read current fan status").set_defaults(func=cmd_read)
-    sub.add_parser("table", help="Show current fan tables").set_defaults(func=cmd_table)
     mon = sub.add_parser("monitor", help="Continuously monitor")
     mon.add_argument("-i", "--interval", type=float, default=1.0)
     mon.set_defaults(func=cmd_monitor)
-    sw = sub.add_parser(
-        "switch-speed",
+    table = sub.add_parser("table", help="Show or reset the current fan tables")
+    table.add_argument(
+        "--reset",
+        action="store_true",
+        help="Restore configured default AP fan curves",
+    )
+    table.set_defaults(func=cmd_table)
+    control = sub.add_parser(
+        "control",
+        help="Select AP RAM-table or EC firmware fan control",
+    )
+    control.add_argument(
+        "authority",
+        type=prefix_choice("ap", "bios", label="fan control authority"),
+        metavar="{ap,bios}",
+        help="ap uses RAM tables; bios returns control to EC firmware/ROM",
+    )
+    control.set_defaults(func=cmd_control)
+    speed = sub.add_parser(
+        "speed",
         help="Set fan transition speed (unit: 2 seconds per step, 0-127)",
     )
-    sw.add_argument(
+    speed.add_argument(
         "steps",
         type=int,
         help="Unit: 2 seconds per step. 1=2s, 3=6s; 0 uses EC default (~7s observed)",
     )
-    sw.set_defaults(func=cmd_switch_speed)
-    sp = sub.add_parser("set", help="Force fan speed(s) (0-100%%)")
-    sp.add_argument("percentage", type=int, nargs="+",
-                    help="1 value for both fans, or 2 values (CPU then GPU)")
-    sp.set_defaults(func=cmd_set)
-    default = sub.add_parser("default", help="Restore default fan curves")
-    relationship = default.add_mutually_exclusive_group()
-    relationship.add_argument(
-        "--linked",
-        dest="independent",
-        action="store_false",
-        help="Use one shared curve index (default)",
+    speed.set_defaults(func=cmd_switch_speed)
+    set_cmd = sub.add_parser("set", help="Set fixed duty or linked/independent lookup")
+    set_cmd.add_argument(
+        "percentages",
+        nargs="*",
+        type=int,
+        metavar="PCT",
+        help="Zero, one, or two duty percentages (Main then Second)",
     )
+    relationship = set_cmd.add_mutually_exclusive_group()
     relationship.add_argument(
+        "-i",
         "--independent",
         dest="independent",
-        action="store_true",
-        help="Use separate Main/Second curve indexes",
+        action="store_const",
+        const=True,
+        help="Use separate Main/Second table indexes",
     )
-    default.set_defaults(func=cmd_default, independent=False)
+    relationship.add_argument(
+        "-l",
+        "--linked",
+        dest="independent",
+        action="store_const",
+        const=False,
+        help="Use one shared table index",
+    )
+    set_cmd.set_defaults(independent=None)
+    set_cmd.set_defaults(func=cmd_set)

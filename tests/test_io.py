@@ -4,14 +4,20 @@ from argparse import Namespace
 from src import fan, mode
 from src import io
 from src.config import (
-    ADDR_MAFAN_CTL,
-    ADDR_AP_OEM9,
+    ADDR_AP_CTL,
+    ADDR_AP_OEM,
+    ADDR_AP_OEM10,
+    ADDR_CPU_FAN_DUTY_BASE,
+    ADDR_FANCTL_RESP,
     ADDR_FAN_SWITCH_SPEED,
+    ADDR_GPU_FAN_DUTY_BASE,
+    ADDR_MAFAN_CTL,
     ADDR_PL1,
     ADDR_PL2,
     ADDR_PL4,
     ADDR_TCC,
-    CTL_TURBO,
+    DEFAULT_CPU_FAN,
+    DEFAULT_GPU_FAN,
     EC_MMIO_MAX,
 )
 
@@ -92,84 +98,191 @@ def test_read_word_helpers_use_expected_byte_order():
     assert io.ec_read_word_be(30, 31) == 0xABCD
 
 
-def test_mode_switch_handles_modes_without_optional_custom_args(capsys):
-    io._set_backend_for_testing(FakeBackend())
+def test_mode_switch_selects_base_policy_without_touching_fan_control(capsys):
+    backend = FakeBackend({
+        ADDR_MAFAN_CTL: 0x40,
+        ADDR_AP_OEM: 0x01,
+        ADDR_AP_OEM10: 0x40,
+        ADDR_AP_CTL: 0x04,
+        ADDR_FANCTL_RESP: 0x80,
+    })
+    io._set_backend_for_testing(backend)
 
-    mode.cmd_switch(Namespace(mode_name="gaming"))
+    mode.cmd_switch(Namespace(mode_name="turbo"))
 
     output = capsys.readouterr().out
-    assert "Mode: Gaming (45W balanced)" in output
+    assert "Base mode: Turbo (performance policy)" in output
+    assert backend.values[ADDR_MAFAN_CTL] == 0x50
+    assert backend.values[ADDR_AP_OEM] == 0x01
+    assert backend.values[ADDR_AP_OEM10] == 0x40
+    assert backend.values[ADDR_AP_CTL] == 0x04
+    assert backend.values[ADDR_FANCTL_RESP] == 0x80
+    assert backend.writes == [(ADDR_MAFAN_CTL, 0x50)]
 
 
-def test_fixed_modes_do_not_write_tcc():
-    backend = FakeBackend()
+def test_mode_no_longer_accepts_custom():
+    io._set_backend_for_testing(FakeBackend())
+
+    with pytest.raises(ValueError, match="unknown mode: custom"):
+        mode.cmd_switch(Namespace(mode_name="custom"))
+
+
+def test_mode_status_reports_base_policy_only(capsys):
+    io._set_backend_for_testing(FakeBackend({
+        ADDR_MAFAN_CTL: 0x00,
+        ADDR_AP_OEM10: 0x40,
+    }))
+
+    mode.cmd_status(Namespace())
+
+    output = capsys.readouterr().out
+    assert "Base mode      = Gaming" in output
+    assert "Custom" not in output
+
+
+def test_fan_ap_clears_non_fan_overrides_and_enables_required_gates():
+    backend = FakeBackend({
+        ADDR_PL1: 25,
+        ADDR_PL2: 45,
+        ADDR_PL4: 65,
+        ADDR_TCC: 0xDF,
+    })
     io._set_backend_for_testing(backend)
 
-    mode.cmd_switch(Namespace(mode_name="gaming"))
+    fan.cmd_ap(Namespace())
 
-    assert all(addr != ADDR_TCC for addr, _ in backend.writes)
-
-
-def test_mode_switch_does_not_write_pl_registers():
-    backend = FakeBackend()
-    io._set_backend_for_testing(backend)
-
-    mode.cmd_switch(Namespace(mode_name="custom", tdp=65, tcc=95, separate=False))
-
-    pl_addrs = {ADDR_PL1, ADDR_PL2, ADDR_PL4}
-    assert all(addr not in pl_addrs for addr, _ in backend.writes)
-
-
-def test_custom_mode_accepts_fixed_tdp_gear():
-    backend = FakeBackend()
-    io._set_backend_for_testing(backend)
-
-    mode.cmd_switch(Namespace(mode_name="custom", tdp=65, tcc=95, separate=False))
-
-    assert backend.values[ADDR_MAFAN_CTL] == CTL_TURBO
-    assert backend.values[ADDR_TCC] == 0xDF
-
-
-def test_custom_mode_tcc_default_keeps_bit7_clear():
-    backend = FakeBackend()
-    io._set_backend_for_testing(backend)
-
-    mode.cmd_switch(Namespace(mode_name="custom", tdp=45, tcc=0, separate=False))
-
+    assert backend.values[ADDR_PL1] == 0
+    assert backend.values[ADDR_PL2] == 0
+    assert backend.values[ADDR_PL4] == 0
     assert backend.values[ADDR_TCC] == 0
+    assert backend.values[ADDR_AP_OEM] & 0x01
+    assert backend.values[ADDR_AP_OEM10] & 0x40
+    assert backend.values[ADDR_AP_CTL] & 0x04
 
 
-def test_custom_mode_rejects_unknown_tdp_gear():
-    io._set_backend_for_testing(FakeBackend())
+def test_fan_bios_releases_ram_table_without_changing_base_mode_or_relationship():
+    backend = FakeBackend({
+        ADDR_MAFAN_CTL: 0x10,
+        ADDR_AP_OEM: 0x01,
+        ADDR_AP_OEM10: 0x40,
+        ADDR_AP_CTL: 0x04,
+        ADDR_FANCTL_RESP: 0x80,
+    })
+    io._set_backend_for_testing(backend)
 
-    with pytest.raises(ValueError, match="25, 45, 65"):
-        mode.cmd_switch(Namespace(mode_name="custom", tdp=54, tcc=0, separate=False))
+    fan.cmd_bios(Namespace())
+
+    assert backend.values[ADDR_MAFAN_CTL] == 0x10
+    assert backend.values[ADDR_AP_OEM] == 0x01
+    assert not backend.values[ADDR_AP_OEM10] & 0x40
+    assert not backend.values[ADDR_AP_CTL] & 0x04
+    assert backend.values[ADDR_FANCTL_RESP] & 0x80
 
 
-def test_custom_mode_rejects_tcc_over_100():
-    io._set_backend_for_testing(FakeBackend())
+def test_fan_set_one_percentage_uses_linked_mode_and_ap_control():
+    backend = FakeBackend({ADDR_FANCTL_RESP: 0x80})
+    io._set_backend_for_testing(backend)
 
-    with pytest.raises(ValueError, match="0-100"):
-        mode.cmd_switch(Namespace(mode_name="custom", tdp=45, tcc=101, separate=False))
+    fan.cmd_set(Namespace(percentages=[35], independent=None))
+
+    assert all(backend.values[ADDR_CPU_FAN_DUTY_BASE + i] == 70 for i in range(16))
+    assert all(backend.values[ADDR_GPU_FAN_DUTY_BASE + i] == 70 for i in range(16))
+    assert not backend.values[ADDR_FANCTL_RESP] & 0x80
+    assert backend.values[ADDR_AP_CTL] & 0x04
 
 
-def test_status_distinguishes_gaming_from_custom(capsys):
-    io._set_backend_for_testing(FakeBackend({ADDR_MAFAN_CTL: 0, ADDR_AP_OEM9: 0}))
+def test_fan_set_two_percentages_uses_independent_mode():
+    backend = FakeBackend()
+    io._set_backend_for_testing(backend)
 
-    mode.cmd_status(Namespace())
+    fan.cmd_set(Namespace(percentages=[40, 60], independent=None))
+
+    assert all(backend.values[ADDR_CPU_FAN_DUTY_BASE + i] == 80 for i in range(16))
+    assert all(backend.values[ADDR_GPU_FAN_DUTY_BASE + i] == 120 for i in range(16))
+    assert backend.values[ADDR_FANCTL_RESP] & 0x80
+    assert backend.values[ADDR_AP_CTL] & 0x04
+
+
+@pytest.mark.parametrize("independent", [False, True])
+def test_fan_set_can_change_only_relationship(independent):
+    backend = FakeBackend()
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_set(Namespace(percentages=[], independent=independent))
+
+    assert bool(backend.values[ADDR_FANCTL_RESP] & 0x80) is independent
+    assert backend.values[ADDR_AP_CTL] & 0x04
+
+
+def test_fan_set_explicit_independent_overrides_one_value_inference():
+    backend = FakeBackend()
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_set(Namespace(percentages=[50], independent=True))
+
+    assert all(backend.values[ADDR_CPU_FAN_DUTY_BASE + i] == 100 for i in range(16))
+    assert all(backend.values[ADDR_GPU_FAN_DUTY_BASE + i] == 100 for i in range(16))
+    assert backend.values[ADDR_FANCTL_RESP] & 0x80
+
+
+def test_fan_set_explicit_linked_overrides_two_value_inference():
+    backend = FakeBackend({ADDR_FANCTL_RESP: 0x80})
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_set(Namespace(percentages=[40, 60], independent=False))
+
+    assert all(backend.values[ADDR_CPU_FAN_DUTY_BASE + i] == 80 for i in range(16))
+    assert all(backend.values[ADDR_GPU_FAN_DUTY_BASE + i] == 120 for i in range(16))
+    assert not backend.values[ADDR_FANCTL_RESP] & 0x80
+
+
+def test_fan_read_does_not_repeat_relationship_as_independent_gate(capsys):
+    io._set_backend_for_testing(FakeBackend({
+        ADDR_AP_OEM: 0x01,
+        ADDR_AP_OEM10: 0x40,
+        ADDR_AP_CTL: 0x04,
+        ADDR_FANCTL_RESP: 0x80,
+    }))
+
+    fan.cmd_read(Namespace())
 
     output = capsys.readouterr().out
-    assert "Gaming 45W" in output
-    assert "not authoritative" in output
+    assert "Fan relationship     : independent" in output
+    assert "Gate Independent" not in output
 
 
-def test_status_decodes_custom_from_oem9_bit7(capsys):
-    io._set_backend_for_testing(FakeBackend({ADDR_MAFAN_CTL: 0, ADDR_AP_OEM9: 0x80}))
+def test_fan_read_prints_runtime_values_before_control_details(capsys):
+    io._set_backend_for_testing(FakeBackend())
 
-    mode.cmd_status(Namespace())
+    fan.cmd_read(Namespace())
 
-    output = capsys.readouterr().out
-    assert "Custom 45W" in output
+    lines = capsys.readouterr().out.splitlines()
+    labels = [line.split(":", 1)[0].rstrip() for line in lines]
+    assert labels == [
+        "CPU Temp",
+        "Main fan (Right) RPM",
+        "Sec  fan (Left)  RPM",
+        "Duty Main(R)/Sec(L)",
+        "Control path",
+        "Switch speed",
+        "Fan relationship",
+        "Zero-RPM warning",
+        "Gate APExist",
+        "Gate Custom",
+        "Gate FanMgmt",
+    ]
+
+
+def test_fan_table_reset_preserves_relationship():
+    backend = FakeBackend({ADDR_FANCTL_RESP: 0x80})
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_table(Namespace(reset=True))
+
+    assert backend.values[ADDR_CPU_FAN_DUTY_BASE] == DEFAULT_CPU_FAN["duty"][0] * 2
+    assert backend.values[ADDR_GPU_FAN_DUTY_BASE] == DEFAULT_GPU_FAN["duty"][0] * 2
+    assert backend.values[ADDR_FANCTL_RESP] & 0x80
+    assert backend.values[ADDR_AP_CTL] & 0x04
 
 
 def test_fan_switch_speed_writes_steps_with_enable_bit():

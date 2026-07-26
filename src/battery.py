@@ -3,6 +3,7 @@
 import argparse
 import os
 
+from .cli import prefix_choice
 from .config import (
     ADDR_AP_OEM,
     ADDR_BATTERY_CHARGE_LIMIT_UP,
@@ -209,5 +210,15 @@ def register(subparsers):
     sp_c.set_defaults(func=cmd_setc)
     
     sp_v = sub.add_parser("setv", help="Set battery charging voltage restriction mode (stationary, balanced, capacity)")
-    sp_v.add_argument("mode", choices=("stationary", "balanced", "capacity"), help="Voltage restriction mode")
+    sp_v.add_argument(
+        "mode",
+        type=prefix_choice(
+            "stationary",
+            "balanced",
+            "capacity",
+            label="battery voltage mode",
+        ),
+        metavar="{stationary,balanced,capacity}",
+        help="Voltage restriction mode",
+    )
     sp_v.set_defaults(func=cmd_setv)

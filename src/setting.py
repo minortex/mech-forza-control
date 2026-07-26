@@ -8,8 +8,6 @@ Commands:
   ec setting acrecov    on|off  — toggle AC recovery (ApExistFlag + XRAM[1830])
 """
 
-import argparse
-
 from .config import (
     ADDR_AP_OEM,
     ADDR_AP_OEM9,
@@ -18,6 +16,7 @@ from .config import (
     ADDR_TRIGGER_BYTE,
     SETTING_LABELS,
 )
+from .cli import prefix_choice
 from .io import ec_read, ec_write
 
 
@@ -144,11 +143,21 @@ def register(subparsers):
     for name in ("winlock", "fnlock", "usbchg"):
         label = SETTING_LABELS[name]
         sp = sub.add_parser(name, help=f"Toggle {name} {label['on']}/{label['off']}")
-        sp.add_argument("state", choices=("on", "off"), help=f"{label['on']} or {label['off']}")
+        sp.add_argument(
+            "state",
+            type=prefix_choice("on", "off", label="setting state"),
+            metavar="{on,off}",
+            help=f"{label['on']} or {label['off']}",
+        )
         sp.set_defaults(func={"winlock": cmd_winlock, "fnlock": cmd_fnlock, "usbchg": cmd_usbchg}[name])
 
     name = "acrecov"
     label = SETTING_LABELS[name]
     sp = sub.add_parser(name, help=f"Toggle {name} {label['on']}/{label['off']}")
-    sp.add_argument("state", choices=("on", "off"), help=f"{label['on']} or {label['off']}")
+    sp.add_argument(
+        "state",
+        type=prefix_choice("on", "off", label="setting state"),
+        metavar="{on,off}",
+        help=f"{label['on']} or {label['off']}",
+    )
     sp.set_defaults(func=cmd_acrecov)

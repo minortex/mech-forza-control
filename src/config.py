@@ -62,49 +62,20 @@ DEFAULT_GPU_FAN = {
 
 MODES = {
     "office": {
-        "desc": "Office (25W silent)",
+        "desc": "Office (quiet policy)",
         "mode": 0,
-        "tdp": 25,
         "ctl": CTL_USER_HI,
-        "custom": False,
     },
     "gaming": {
-        "desc": "Gaming (45W balanced)",
+        "desc": "Gaming (balanced policy)",
         "mode": 1,
-        "tdp": 45,
         "ctl": CTL_NORMAL,
-        "custom": False,
     },
     "turbo": {
-        "desc": "Turbo (65W performance)",
+        "desc": "Turbo (performance policy)",
         "mode": 2,
-        "tdp": 65,
         "ctl": CTL_TURBO,
-        "custom": False,
     },
-    "custom": {
-        "desc": "Custom (manual fan)",
-        "mode": 3,
-        "tdp": None,
-        "ctl": CTL_NORMAL,
-        "custom": True,
-    },
-}
-
-MODE_CTL_LABELS = {
-    0: "Normal (Gaming/Custom)",
-    16: "Turbo",
-    64: "FanBoost",
-    80: "Turbo+FanBoost",
-    128: "User_Fan",
-    160: "HiMode (Office)",
-    224: "HiMode+FanBoost",
-}
-
-TDP_CTL = {
-    25: CTL_USER_HI,
-    45: CTL_NORMAL,
-    65: CTL_TURBO,
 }
 
 # Brightness order (brightest to dimmest): 2 > 4 > 1 > 3 > 0
