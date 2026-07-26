@@ -2,12 +2,13 @@
 
 pkgname=mech-forza-control-git
 pkgver=0.1.0.r0.gc8646e3
-pkgrel=2
+pkgrel=3
 pkgdesc="Mechrevo notebook EC direct control CLI (MFC) — power mode, fan curve, keyboard backlight"
 arch=('any')
 url="https://github.com/minortex/mech-forza-control"
 license=('MIT')
 depends=('python>=3.10')
+optdepends=('mech-forza-kmod-dkms-git: GX4HRXL kernel EC bridge (recommended on Linux)')
 makedepends=('python-build' 'python-installer' 'python-hatchling' 'git')
 source=("$pkgname::git+$url.git")
 sha256sums=('SKIP')

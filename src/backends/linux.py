@@ -197,7 +197,8 @@ def select_backend():
         if name == "kernel":
             raise RuntimeError(
                 f"Cannot open {KernelEcBackend.DEVICE_PATH}: {exc}\n"
-                "Install and load the mech-forza-kmod driver first. Legacy access is "
+                "Install/load mech-forza-kmod and ensure your user is in wheel. "
+                "Legacy access is "
                 "available only by explicitly setting MFC_EC_BACKEND=acpi-call "
                 "or MFC_EC_BACKEND=devmem."
             ) from exc

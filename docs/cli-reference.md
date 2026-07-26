@@ -1,11 +1,12 @@
 # CLI 命令参考
 
 Linux 默认通过 `/dev/mechrevo-ec` 内核桥接访问 `INOU0000.ECRR/ECRW`，不会静默回退到
-`/dev/mem`。设备节点默认为 `0600`，因此命令仍需 sudo。驱动构建和 DKMS 打包见独立仓库
+`/dev/mem`。DKMS 包安装的 udev 规则将设备设置为 `0660 root:wheel`；用户属于 `wheel` 时，
+默认内核后端不需要 sudo。不要将 EC 设备开放为 `0666`。驱动构建和 DKMS 打包见独立仓库
 [`mech-forza-kmod`](https://github.com/minortex/mech-forza-kmod)。
 
 ```bash
-sudo uv run mfc <command>
+uv run mfc <command>
 ```
 
 ---
@@ -15,9 +16,9 @@ sudo uv run mfc <command>
 ### 固定模式
 
 ```bash
-sudo uv run mfc mode office    # Office (25W)
-sudo uv run mfc mode gaming    # Gaming (45W)
-sudo uv run mfc mode turbo     # Turbo (65W)
+uv run mfc mode office    # Office (25W)
+uv run mfc mode gaming    # Gaming (45W)
+uv run mfc mode turbo     # Turbo (65W)
 ```
 
 固定模式由 XRAM[1873] 控制字节 + 默认风扇表决定，PL 由 EC/BIOS 自动管理。
@@ -25,7 +26,7 @@ sudo uv run mfc mode turbo     # Turbo (65W)
 ### Custom 模式
 
 ```bash
-sudo uv run mfc mode custom [25|45|65] [--tcc TCC] [--separate]
+uv run mfc mode custom [25|45|65] [--tcc TCC] [--separate]
 ```
 
 | 参数 | 说明 |
@@ -42,8 +43,8 @@ Custom 模式的关键差异：
 ### 状态查看
 
 ```bash
-sudo uv run mfc mode status    # 当前模式、CTL 字节、PL 读数
-sudo uv run mfc mode dump      # dump XRAM[1829..1844] + XRAM[1989..1994]
+uv run mfc mode status    # 当前模式、CTL 字节、PL 读数
+uv run mfc mode dump      # dump XRAM[1829..1844] + XRAM[1989..1994]
 ```
 
 `status` 输出包括 XRAM[1873] CTL 字节、XRAM[1830] OEM9、XRAM[1831] OEM10、
@@ -58,7 +59,7 @@ XRAM[1857] ApExistFlag、XRAM[1990] AP_CTL、PL1/PL2/PL4 读数。
 ### 读取
 
 ```bash
-sudo uv run mfc fan read       # 当前 RPM、Duty、控制字节、切换速度
+uv run mfc fan read       # 当前 RPM、Duty、控制字节、切换速度
 ```
 
 输出：主/副风扇 RPM、XRAM[1873] 控制字节、主/副 Duty 读数、切换速度。
@@ -66,7 +67,7 @@ sudo uv run mfc fan read       # 当前 RPM、Duty、控制字节、切换速度
 ### 持续监控
 
 ```bash
-sudo uv run mfc fan monitor [-i INTERVAL]
+uv run mfc fan monitor [-i INTERVAL]
 ```
 
 | 参数 | 说明 |
@@ -78,8 +79,8 @@ Ctrl+C 停止。输出时间戳 + RPM + Duty 表格。
 ### 强制转速
 
 ```bash
-sudo uv run mfc fan set PCT              # 两个风扇同一百分比
-sudo uv run mfc fan set CPU_PCT GPU_PCT  # 分别设置 CPU 和 GPU 风扇
+uv run mfc fan set PCT              # 两个风扇同一百分比
+uv run mfc fan set CPU_PCT GPU_PCT  # 分别设置 CPU 和 GPU 风扇
 ```
 
 `PCT` 范围 0-100。通过把风扇表 16 级 Duty 全部写入同一值实现。
@@ -87,7 +88,7 @@ sudo uv run mfc fan set CPU_PCT GPU_PCT  # 分别设置 CPU 和 GPU 风扇
 ### 切换速度
 
 ```bash
-sudo uv run mfc fan switch-speed STEPS
+uv run mfc fan switch-speed STEPS
 ```
 
 | STEPS | 效果 |
@@ -102,7 +103,7 @@ sudo uv run mfc fan switch-speed STEPS
 ### 恢复默认
 
 ```bash
-sudo uv run mfc fan default    # 恢复 config.py 中的出厂风扇曲线
+uv run mfc fan default    # 恢复 config.py 中的出厂风扇曲线
 ```
 
 写入 UpT + DownT + Duty 到 XRAM[3840..3935]。
@@ -112,12 +113,12 @@ sudo uv run mfc fan default    # 恢复 config.py 中的出厂风扇曲线
 ## mfc backlight — 键盘背光
 
 ```bash
-sudo uv run mfc backlight status   # 当前 XRAM[1932] 值、亮度等级、位模式
-sudo uv run mfc backlight off      # 关闭（等级 0）
-sudo uv run mfc backlight dim      # 暗（等级 1，bit7:5=001）
-sudo uv run mfc backlight bright   # 亮（等级 2，bit7:5=010）
-sudo uv run mfc backlight cycle    # 循环：off -> dim -> bright -> off
-sudo uv run mfc backlight level N  # 直接设置等级 0-4（高级用法）
+uv run mfc backlight status   # 当前 XRAM[1932] 值、亮度等级、位模式
+uv run mfc backlight off      # 关闭（等级 0）
+uv run mfc backlight dim      # 暗（等级 1，bit7:5=001）
+uv run mfc backlight bright   # 亮（等级 2，bit7:5=010）
+uv run mfc backlight cycle    # 循环：off -> dim -> bright -> off
+uv run mfc backlight level N  # 直接设置等级 0-4（高级用法）
 ```
 
 等级 0-4 对应 bit7:5 编码 `000`/`011`/`001`/`100`/`010`。
@@ -131,7 +132,7 @@ sudo uv run mfc backlight level N  # 直接设置等级 0-4（高级用法）
 ### 查看状态
 
 ```bash
-sudo uv run mfc setting status
+uv run mfc setting status
 ```
 
 输出：Win lock、Fn lock、USB charger、AC recovery 当前状态和 ApExistFlag。
@@ -139,8 +140,8 @@ sudo uv run mfc setting status
 ### Win 锁
 
 ```bash
-sudo uv run mfc setting winlock on     # 锁定 Win 键
-sudo uv run mfc setting winlock off    # 解锁
+uv run mfc setting winlock on     # 锁定 Win 键
+uv run mfc setting winlock off    # 解锁
 ```
 
 通过 XRAM[1895] bit0 触发 toggle，状态在 XRAM[1896] bit0。
@@ -148,8 +149,8 @@ sudo uv run mfc setting winlock off    # 解锁
 ### Fn 锁
 
 ```bash
-sudo uv run mfc setting fnlock on      # 锁定 Fn 键
-sudo uv run mfc setting fnlock off     # 解锁
+uv run mfc setting fnlock on      # 锁定 Fn 键
+uv run mfc setting fnlock off     # 解锁
 ```
 
 直接写 XRAM[1870] bit4。
@@ -157,8 +158,8 @@ sudo uv run mfc setting fnlock off     # 解锁
 ### USB 关机充电
 
 ```bash
-sudo uv run mfc setting usbchg on      # 开启关机 USB 充电
-sudo uv run mfc setting usbchg off     # 关闭
+uv run mfc setting usbchg on      # 开启关机 USB 充电
+uv run mfc setting usbchg off     # 关闭
 ```
 
 直接写 XRAM[1895] bit4（RMW）。
@@ -166,8 +167,8 @@ sudo uv run mfc setting usbchg off     # 关闭
 ### AC Recovery（来电自动开机）
 
 ```bash
-sudo uv run mfc setting acrecov on     # 开启
-sudo uv run mfc setting acrecov off    # 关闭
+uv run mfc setting acrecov on     # 开启
+uv run mfc setting acrecov off    # 关闭
 ```
 
 自动设置 ApExistFlag（XRAM[1857] bit0），然后写 XRAM[1830] bit3。
@@ -182,7 +183,7 @@ sudo uv run mfc setting acrecov off    # 关闭
 ### 查看充电限制状态
 
 ```bash
-sudo uv run mfc bat status
+uv run mfc bat status
 ```
 
 输出当前充电限制上限（setc，`XRAM[1977]`）、限制电压模式（setv，`XRAM[1958]`），以及实时电池信息。
@@ -190,7 +191,7 @@ sudo uv run mfc bat status
 ### 设置充电上限百分比 (setc)
 
 ```bash
-sudo uv run mfc bat setc <limit>
+uv run mfc bat setc <limit>
 ```
 
 其中 `<limit>` 为 0-100 的整数（写入时保留 `XRAM[1977]` bit7，并确保 `XRAM[1857]` bit0 的 `ApExistFlag` 处于开启状态）：
@@ -200,7 +201,7 @@ sudo uv run mfc bat setc <limit>
 ### 设置限制电压模式 (setv)
 
 ```bash
-sudo uv run mfc bat setv <mode>
+uv run mfc bat setv <mode>
 ```
 
 通过设置 `XRAM[1958]` 的 bits [5:4] 来限制电池的充电截止电压（写入时保留触控板 LED 等其他 bit 状态）：

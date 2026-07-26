@@ -16,12 +16,16 @@ On Linux, the default backend is the GX4HRXL-specific ACPI kernel bridge at
 [`mech-forza-kmod`](https://github.com/minortex/mech-forza-kmod). Install its DKMS package
 and load it manually after ensuring no other driver owns `INOU0000`.
 
-The device is root-only by default, so the CLI still needs `sudo`:
+The DKMS package installs a udev rule that exposes the device as `0660 root:wheel`.
+Members of `wheel` can use the default kernel backend without running the whole CLI as root:
 
 ```bash
 cd mechrevo-forza-control
-sudo uv run mfc
+uv run mfc
 ```
+
+Do not make the EC device world-writable. Users outside `wheel`, and explicitly selected legacy
+`devmem`/`acpi-call` backends, still require suitable elevated privileges.
 
 Help information via `-h` parameters.
 
@@ -34,7 +38,7 @@ If you want to control the capacity limit, here are two ways:
 1. follow this [guide](https://gist.github.com/w568w/957976b59906e0ce5d6c13ad342e1593) 
 2. flash [slimbook firmware](https://slimbook.com/en/downloads?ruta=%2FLaptops%2FEvo-14%2FRyzen-8845HS%2FBIOS) then turn on the charge limit on BIOS.
 
-then use `sudo mfc bat setc <limit>`.
+then use `mfc bat setc <limit>`.
 
 Without modifying the EC firmware, the voltage limit `setv` or the official control center will never take effect.
 
