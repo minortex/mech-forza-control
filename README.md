@@ -11,8 +11,11 @@ Currently support almost all settings in official control center.
 > [!IMPORTANT]
 > Remember to mask or uninstall tccd first, or fan may not take effect.
 
-On Linux, the default backend is the GX4HRXL-specific ACPI kernel bridge at
-`/dev/mechrevo-ec`; it does not map `/dev/mem`. The driver is maintained separately in
+On Linux, the default backend is the GX4HRXL-specific kernel bridge at
+`/dev/mechrevo-ec`. The driver owns the firmware-declared 4 KiB EC MMIO resource and exposes
+checked byte, block, and atomic vector ioctls; userspace never maps `/dev/mem`. Multiple clients
+may open the device (for example monitor plus mode switching), while a device mutex serializes
+hardware transactions. The driver is maintained separately in
 [`mech-forza-kmod`](https://github.com/minortex/mech-forza-kmod). Install its DKMS package
 and load it manually after ensuring no other driver owns `INOU0000`.
 

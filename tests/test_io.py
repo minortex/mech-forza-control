@@ -20,6 +20,7 @@ from src.registers import (
     EC_MMIO_MAX,
     FAN_BOOST_BIT,
 )
+from src.io import EC_OP_READ, EC_OP_UPDATE_BITS, EC_OP_WRITE, EcOperation
 
 
 class FakeBackend:
@@ -40,6 +41,41 @@ class FakeBackend:
     def ec_write(self, addr, value):
         self.writes.append((addr, value))
         self.values[addr] = value
+
+
+class NativeBatchBackend(FakeBackend):
+    def __init__(self, initial=None):
+        super().__init__(initial)
+        self.transactions = []
+        self.block_reads = []
+        self.block_writes = []
+
+    def ec_read_block(self, addr, length):
+        self.block_reads.append((addr, length))
+        return bytes(self.ec_read(addr + i) for i in range(length))
+
+    def ec_write_block(self, addr, payload):
+        payload = bytes(payload)
+        self.block_writes.append((addr, payload))
+        for i, value in enumerate(payload):
+            self.ec_write(addr + i, value)
+
+    def ec_transaction(self, operations):
+        operations = list(operations)
+        self.transactions.append(operations)
+        results = []
+        for op in operations:
+            if op.type == EC_OP_READ:
+                result = self.ec_read(op.addr)
+            elif op.type == EC_OP_WRITE:
+                self.ec_write(op.addr, op.value)
+                result = op.value
+            else:
+                current = self.ec_read(op.addr)
+                result = (current & ~op.mask) | (op.value & op.mask)
+                self.ec_write(op.addr, result)
+            results.append(result)
+        return results
 
 
 @pytest.fixture(autouse=True)
@@ -373,3 +409,96 @@ def test_fan_read_decodes_zero_step_as_ec_default(capsys):
     output = capsys.readouterr().out
     assert "EC default" in output
     assert "7s" in output
+
+
+def test_block_io_uses_native_capability_and_chunks_at_uapi_limit():
+    backend = NativeBatchBackend({i: i & 0xFF for i in range(260)})
+    io._set_backend_for_testing(backend)
+
+    payload = io.ec_read_block(0, 260)
+    io.ec_write_block(0x0100, bytes(range(130)))
+
+    assert payload == bytes(i & 0xFF for i in range(260))
+    assert backend.block_reads == [(0, 128), (128, 128), (256, 4)]
+    assert [len(data) for _, data in backend.block_writes] == [128, 2]
+
+
+def test_transaction_uses_native_backend_capability():
+    backend = NativeBatchBackend({0x10: 0xA0})
+    io._set_backend_for_testing(backend)
+    operations = [
+        EcOperation(EC_OP_READ, 0x10),
+        EcOperation(EC_OP_UPDATE_BITS, 0x10, 0x03, 0x83),
+        EcOperation(EC_OP_WRITE, 0x11, 0x55),
+    ]
+
+    assert io.ec_transaction(operations) == [0xA0, 0x23, 0x55]
+    assert backend.transactions == [operations]
+    assert backend.values[0x10] == 0x23
+    assert backend.values[0x11] == 0x55
+
+
+def test_fan_read_is_one_atomic_snapshot(capsys):
+    backend = NativeBatchBackend()
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_read(Namespace())
+
+    assert len(backend.transactions) == 1
+    assert len(backend.transactions[0]) == 13
+    assert all(op.type == EC_OP_READ for op in backend.transactions[0])
+
+
+def test_fan_table_is_one_103_read_atomic_snapshot(capsys):
+    backend = NativeBatchBackend()
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_table(Namespace(reset=False, file=None))
+
+    assert len(backend.transactions) == 1
+    assert len(backend.transactions[0]) == 103
+    assert all(op.type == EC_OP_READ for op in backend.transactions[0])
+
+
+def test_mode_switch_is_one_atomic_update_and_read(capsys):
+    backend = NativeBatchBackend({ADDR_MAFAN_CTL: FAN_BOOST_BIT})
+    io._set_backend_for_testing(backend)
+
+    mode.cmd_switch(Namespace(mode_name="turbo"))
+
+    assert len(backend.transactions) == 1
+    assert backend.transactions[0] == [
+        EcOperation(EC_OP_UPDATE_BITS, ADDR_MAFAN_CTL, 0x10, 0x90),
+        EcOperation(EC_OP_READ, ADDR_MAFAN_CTL),
+    ]
+    assert backend.values[ADDR_MAFAN_CTL] == FAN_BOOST_BIT | 0x10
+
+
+def test_fixed_fan_set_is_one_atomic_transaction():
+    backend = NativeBatchBackend()
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_set(Namespace(percentages=[35], independent=None, turbo=False))
+
+    assert len(backend.transactions) == 1
+    assert len(backend.transactions[0]) == 52
+    assert backend.values[ADDR_AP_CTL] & 0x04
+    assert not backend.values[ADDR_FANCTL_RESP] & 0x80
+
+
+def test_fan_table_reset_is_one_atomic_transaction(monkeypatch):
+    backend = NativeBatchBackend({ADDR_FANCTL_RESP: 0x80})
+    io._set_backend_for_testing(backend)
+    curve = FanCurve(tuple(range(16)), tuple(range(16)), (20,) * 16)
+    monkeypatch.setattr(
+        fan,
+        "load_fan_profile",
+        lambda path=None: FanProfile(curve, curve, "test-profile.toml"),
+    )
+
+    fan.cmd_table(Namespace(reset=True, file=None))
+
+    assert len(backend.transactions) == 1
+    assert len(backend.transactions[0]) == 111
+    assert backend.values[ADDR_FANCTL_RESP] & 0x80
+    assert backend.values[ADDR_AP_CTL] & 0x04

@@ -5,9 +5,8 @@ from .registers import (
     CTL_NORMAL,
     CTL_TURBO,
     CTL_USER_HI,
-    FAN_BOOST_BIT,
 )
-from .io import ec_read, ec_write
+from .io import EC_OP_READ, EC_OP_UPDATE_BITS, EcOperation, ec_read, ec_transaction
 
 
 MODES = {
@@ -47,12 +46,16 @@ def cmd_switch(args):
     if mode is None:
         raise ValueError(f"unknown mode: {name}")
 
-    # 0x0751 also carries FanBoost in bit6.  A base-mode change must not
-    # silently alter fan ownership, fan tables, or the FanBoost selection.
-    current = ec_read(ADDR_MAFAN_CTL)
-    requested = mode["ctl"] | (current & FAN_BOOST_BIT)
-    ec_write(ADDR_MAFAN_CTL, requested)
-    got = ec_read(ADDR_MAFAN_CTL)
+    # 0x0751 also carries FanBoost in bit6. Update only the base-mode bits,
+    # then verify under the same kernel transaction mutex so another client
+    # cannot interleave a mode/fan change between write and readback.
+    requested = mode["ctl"]
+    _, got = ec_transaction(
+        (
+            EcOperation(EC_OP_UPDATE_BITS, ADDR_MAFAN_CTL, requested, _MODE_MASK),
+            EcOperation(EC_OP_READ, ADDR_MAFAN_CTL),
+        )
+    )
 
     print(f"  Base mode: {mode['desc']} (operating={mode['mode']})")
     print("  Power:     EC/BIOS policy (actual limits depend on platform and power state)")

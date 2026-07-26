@@ -1,4 +1,8 @@
-"""Backend protocol for EC byte I/O."""
+"""Backend protocol for primitive EC byte I/O.
+
+Block and transaction methods are optional capabilities discovered by
+``src.io`` at runtime, so legacy and Windows backends only need byte access.
+"""
 
 from typing import Protocol
 

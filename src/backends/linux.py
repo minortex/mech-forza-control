@@ -25,6 +25,13 @@ _IOC_WRITE = 1
 _IOC_READ = 2
 
 _EC_IO = struct.Struct("=HBB")
+_EC_BLOCK_MAX = 128
+_EC_BLOCK_HEADER = struct.Struct("=HH")
+_EC_BLOCK_SIZE = _EC_BLOCK_HEADER.size + _EC_BLOCK_MAX
+_EC_OP = struct.Struct("=HBBBB")
+_EC_XFER_HEADER = struct.Struct("=HH")
+_EC_XFER_MAX_OPS = 128
+_EC_XFER_SIZE = _EC_XFER_HEADER.size + _EC_XFER_MAX_OPS * _EC_OP.size
 
 
 def _ioc(direction: int, ioctl_type: int, number: int, size: int) -> int:
@@ -41,6 +48,15 @@ MECHREVO_EC_IOC_READ = _ioc(_IOC_READ | _IOC_WRITE, _IOCTL_MAGIC, 0x00, _EC_IO.s
 MECHREVO_EC_IOC_WRITE = _ioc(_IOC_WRITE, _IOCTL_MAGIC, 0x01, _EC_IO.size)
 MECHREVO_EC_IOC_UPDATE_BITS = _ioc(
     _IOC_READ | _IOC_WRITE, _IOCTL_MAGIC, 0x02, _EC_IO.size
+)
+MECHREVO_EC_IOC_READ_BLOCK = _ioc(
+    _IOC_READ | _IOC_WRITE, _IOCTL_MAGIC, 0x03, _EC_BLOCK_SIZE
+)
+MECHREVO_EC_IOC_WRITE_BLOCK = _ioc(
+    _IOC_WRITE, _IOCTL_MAGIC, 0x04, _EC_BLOCK_SIZE
+)
+MECHREVO_EC_IOC_XFER = _ioc(
+    _IOC_READ | _IOC_WRITE, _IOCTL_MAGIC, 0x05, _EC_XFER_SIZE
 )
 
 
@@ -92,6 +108,58 @@ class KernelEcBackend:
         )
         return result
 
+    def ec_read_block(self, addr, length):
+        if not 1 <= length <= _EC_BLOCK_MAX:
+            raise ValueError(f"kernel EC block length must be 1-{_EC_BLOCK_MAX}")
+        self._ensure_open()
+        data = bytearray(_EC_BLOCK_SIZE)
+        _EC_BLOCK_HEADER.pack_into(data, 0, addr, length)
+        fcntl.ioctl(self._fd, MECHREVO_EC_IOC_READ_BLOCK, data, True)
+        got_addr, got_length = _EC_BLOCK_HEADER.unpack_from(data)
+        if (got_addr, got_length) != (addr, length):
+            raise RuntimeError("kernel EC block response header mismatch")
+        return bytes(data[_EC_BLOCK_HEADER.size : _EC_BLOCK_HEADER.size + length])
+
+    def ec_write_block(self, addr, payload):
+        payload = bytes(payload)
+        if not 1 <= len(payload) <= _EC_BLOCK_MAX:
+            raise ValueError(f"kernel EC block length must be 1-{_EC_BLOCK_MAX}")
+        self._ensure_open()
+        data = bytearray(_EC_BLOCK_SIZE)
+        _EC_BLOCK_HEADER.pack_into(data, 0, addr, len(payload))
+        start = _EC_BLOCK_HEADER.size
+        data[start : start + len(payload)] = payload
+        fcntl.ioctl(self._fd, MECHREVO_EC_IOC_WRITE_BLOCK, data, True)
+
+    def ec_transaction(self, operations):
+        if not 1 <= len(operations) <= _EC_XFER_MAX_OPS:
+            raise ValueError(
+                f"kernel EC transaction must contain 1-{_EC_XFER_MAX_OPS} operations"
+            )
+        self._ensure_open()
+        data = bytearray(_EC_XFER_SIZE)
+        _EC_XFER_HEADER.pack_into(data, 0, len(operations), 0)
+        for index, op in enumerate(operations):
+            _EC_OP.pack_into(
+                data,
+                _EC_XFER_HEADER.size + index * _EC_OP.size,
+                op.addr,
+                op.type,
+                op.value,
+                op.mask,
+                0,
+            )
+        fcntl.ioctl(self._fd, MECHREVO_EC_IOC_XFER, data, True)
+        count, reserved = _EC_XFER_HEADER.unpack_from(data)
+        if count != len(operations) or reserved:
+            raise RuntimeError("kernel EC transaction response header mismatch")
+        return [
+            _EC_OP.unpack_from(
+                data, _EC_XFER_HEADER.size + index * _EC_OP.size
+            )[2]
+            for index in range(count)
+        ]
+
 
 class DevMemBackend:
     def __init__(self):
@@ -127,6 +195,16 @@ class DevMemBackend:
         if self._map is None:
             raise RuntimeError("/dev/mem EC mmap not open")
         self._map[addr] = value & 0xFF
+
+    def ec_read_block(self, addr, length):
+        if self._map is None:
+            raise RuntimeError("/dev/mem EC mmap not open")
+        return bytes(self._map[addr : addr + length])
+
+    def ec_write_block(self, addr, payload):
+        if self._map is None:
+            raise RuntimeError("/dev/mem EC mmap not open")
+        self._map[addr : addr + len(payload)] = bytes(payload)
 
 
 class AcpiCallBackend:

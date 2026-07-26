@@ -1,8 +1,10 @@
 # CLI 命令参考
 
-Linux 默认通过 `/dev/mechrevo-ec` 内核桥接访问 `INOU0000.ECRR/ECRW`，不会静默回退到
-`/dev/mem`。DKMS 包安装的 udev 规则将设备设置为 `0660 root:wheel`；用户属于 `wheel` 时，
-默认内核后端不需要 sudo。不要将 EC 设备开放为 `0666`。驱动构建和 DKMS 打包见独立仓库
+Linux 默认通过 `/dev/mechrevo-ec` 内核桥接受控访问固件声明的 4 KiB EC MMIO 资源，
+不会把物理内存映射给用户态，也不会静默回退到 `/dev/mem`。后端支持连续 block 和原子 vector
+transaction；多个客户端可以同时打开设备，一边 monitor 一边切换模式，硬件事务仍由设备 mutex
+串行化。DKMS 包安装的 udev 规则将设备设置为 `0660 root:wheel`；用户属于 `wheel` 时，默认内核
+后端不需要 sudo。不要将 EC 设备开放为 `0666`。驱动构建和 DKMS 打包见独立仓库
 [`mech-forza-kmod`](https://github.com/minortex/mech-forza-kmod)。
 
 ```bash
