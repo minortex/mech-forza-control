@@ -1,4 +1,4 @@
-"""Fan monitoring — read RPM, duty, control byte."""
+"""Fan monitoring and curve control."""
 
 import time
 
@@ -7,7 +7,6 @@ from .config import (
     ADDR_MAIN_FAN_DUTY,
     ADDR_MAIN_FAN_RPM_HI,
     ADDR_MAIN_FAN_RPM_LO,
-    ADDR_MAFAN_CTL,
     ADDR_SECOND_FAN_DUTY,
     ADDR_SECOND_FAN_RPM_HI,
     ADDR_SECOND_FAN_RPM_LO,
@@ -44,7 +43,6 @@ def _read():
         ec_read(ADDR_CPU_TEMP),
         ec_read(ADDR_MAIN_FAN_RPM_HI) * 256 + ec_read(ADDR_MAIN_FAN_RPM_LO),
         ec_read(ADDR_SECOND_FAN_RPM_HI) * 256 + ec_read(ADDR_SECOND_FAN_RPM_LO),
-        ec_read(ADDR_MAFAN_CTL),
         ec_read(ADDR_MAIN_FAN_DUTY),
         ec_read(ADDR_SECOND_FAN_DUTY),
         ec_read(ADDR_FAN_SWITCH_SPEED),
@@ -52,11 +50,10 @@ def _read():
 
 
 def cmd_read(args):
-    cpu_t, mr, sr, ctrl, dm, ds, sw = _read()
+    cpu_t, mr, sr, dm, ds, sw = _read()
     print(f"CPU Temp             : {cpu_t}\u00b0C")
     print(f"Main fan (Right) RPM : {mr}")
     print(f"Sec  fan (Left)  RPM : {sr}")
-    print(f"Control byte         : 0x{ctrl:02x} (0b{ctrl:08b})")
     print(f"Duty Main(R)/Sec(L)  : {dm}% / {ds}%")
     print(
         f"Switch speed         : {_decode_switch_speed(sw)} "
@@ -67,12 +64,12 @@ def cmd_read(args):
 def cmd_monitor(args):
     iv = args.interval
     print(f"Monitoring every {iv}s, Ctrl+C to stop\n")
-    hdr = f"{'Time':>8}  {'CPU':>4}  {'MainRPM':>7}  {'SecRPM':>7}  {'Ctrl':>5}  {'DutyM(R)':>8}  {'DutyS(L)':>8}"
-    print(hdr); print("-" * 68)
+    hdr = f"{'Time':>8}  {'CPU':>4}  {'MainRPM':>7}  {'SecRPM':>7}  {'DutyM(R)':>8}  {'DutyS(L)':>8}"
+    print(hdr); print("-" * len(hdr))
     try:
         while True:
-            cpu_t, mr, sr, ctrl, dm, ds, _ = _read()
-            print(f"{time.strftime('%H:%M:%S')}  {cpu_t:>3}\u00b0C  {mr:>7}  {sr:>7}  {ctrl:>5}  {dm:>8}  {ds:>8}", flush=True)
+            cpu_t, mr, sr, dm, ds, _ = _read()
+            print(f"{time.strftime('%H:%M:%S')}  {cpu_t:>3}\u00b0C  {mr:>7}  {sr:>7}  {dm:>8}  {ds:>8}", flush=True)
             time.sleep(iv)
     except KeyboardInterrupt:
         pass
