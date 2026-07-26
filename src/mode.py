@@ -1,11 +1,10 @@
 """Base EC performance-policy switching: Office / Gaming / Turbo."""
 
-from .config import ADDR_MAFAN_CTL, MODES
+from .config import ADDR_MAFAN_CTL, FAN_BOOST_BIT, MODES
 from .io import ec_read, ec_write
 
 
 _MODE_MASK = 0x90
-_FAN_BOOST_BIT = 0x40
 _MODE_LABELS = {
     0x80: "Office",
     0x00: "Gaming",
@@ -26,7 +25,7 @@ def cmd_switch(args):
     # 0x0751 also carries FanBoost in bit6.  A base-mode change must not
     # silently alter fan ownership, fan tables, or the FanBoost selection.
     current = ec_read(ADDR_MAFAN_CTL)
-    requested = mode["ctl"] | (current & _FAN_BOOST_BIT)
+    requested = mode["ctl"] | (current & FAN_BOOST_BIT)
     ec_write(ADDR_MAFAN_CTL, requested)
     got = ec_read(ADDR_MAFAN_CTL)
 
@@ -42,10 +41,10 @@ def cmd_switch(args):
 def cmd_status(args):
     ctl = ec_read(ADDR_MAFAN_CTL)
     print("[EC Base Mode]")
-    print(f"  Base mode      = {_status_label(ctl)}")
-    print(f"  FanBoost       = {'on' if ctl & _FAN_BOOST_BIT else 'off'}")
-    print(f"  XRAM[0x{ADDR_MAFAN_CTL:04X}] CTL = 0x{ctl:02x}")
-    print("  Note           = fan ownership is reported by `mfc fan read`")
+    print(
+        f"  Base mode = {_status_label(ctl)} "
+        f"(XRAM[0x{ADDR_MAFAN_CTL:04X}] CTL = 0x{ctl:02x})"
+    )
 
 
 def cmd_dump(args):

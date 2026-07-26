@@ -76,6 +76,14 @@ def test_fan_set_parses_relationship_flags(argv, percentages, independent):
     assert args.independent is independent
 
 
+def test_fan_set_parses_turbo_toggle():
+    args = build_parser().parse_args(["f", "se", "-t"])
+
+    assert args.percentages == []
+    assert args.independent is None
+    assert args.turbo is True
+
+
 def test_ambiguous_top_level_command_is_rejected(capsys):
     with pytest.raises(SystemExit) as exc_info:
         build_parser().parse_args(["b"])

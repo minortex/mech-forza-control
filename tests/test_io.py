@@ -19,6 +19,7 @@ from src.config import (
     DEFAULT_CPU_FAN,
     DEFAULT_GPU_FAN,
     EC_MMIO_MAX,
+    FAN_BOOST_BIT,
 )
 
 
@@ -135,9 +136,10 @@ def test_mode_status_reports_base_policy_only(capsys):
 
     mode.cmd_status(Namespace())
 
-    output = capsys.readouterr().out
-    assert "Base mode      = Gaming" in output
-    assert "Custom" not in output
+    assert capsys.readouterr().out.splitlines() == [
+        "[EC Base Mode]",
+        "  Base mode = Gaming (XRAM[0x0751] CTL = 0x00)",
+    ]
 
 
 def test_fan_ap_clears_non_fan_overrides_and_enables_required_gates():
@@ -236,6 +238,25 @@ def test_fan_set_explicit_linked_overrides_two_value_inference():
     assert not backend.values[ADDR_FANCTL_RESP] & 0x80
 
 
+def test_fan_set_turbo_toggles_fanboost_without_enabling_ap_control(capsys):
+    backend = FakeBackend({ADDR_MAFAN_CTL: 0x10})
+    io._set_backend_for_testing(backend)
+
+    args = Namespace(percentages=[], independent=None, turbo=True)
+    fan.cmd_set(args)
+
+    assert backend.values[ADDR_MAFAN_CTL] == 0x10 | FAN_BOOST_BIT
+    assert backend.writes == [(ADDR_MAFAN_CTL, 0x10 | FAN_BOOST_BIT)]
+    assert not backend.values.get(ADDR_AP_CTL, 0) & 0x04
+    assert "FanBoost: on" in capsys.readouterr().out
+
+    fan.cmd_set(args)
+
+    assert backend.values[ADDR_MAFAN_CTL] == 0x10
+    assert backend.writes[-1] == (ADDR_MAFAN_CTL, 0x10)
+    assert "FanBoost: off" in capsys.readouterr().out
+
+
 def test_fan_read_does_not_repeat_relationship_as_independent_gate(capsys):
     io._set_backend_for_testing(FakeBackend({
         ADDR_AP_OEM: 0x01,
@@ -265,6 +286,7 @@ def test_fan_read_prints_runtime_values_before_control_details(capsys):
         "Duty Main(R)/Sec(L)",
         "Control path",
         "Switch speed",
+        "FanBoost",
         "Fan relationship",
         "Zero-RPM warning",
         "Gate APExist",

@@ -11,6 +11,7 @@ from .config import (
     ADDR_MAIN_FAN_INDEX,
     ADDR_MAIN_FAN_RPM_HI,
     ADDR_MAIN_FAN_RPM_LO,
+    ADDR_MAFAN_CTL,
     ADDR_PL1,
     ADDR_PL2,
     ADDR_PL4,
@@ -29,6 +30,7 @@ from .config import (
     ADDR_GPU_FAN_DNT_BASE,
     DEFAULT_CPU_FAN,
     DEFAULT_GPU_FAN,
+    FAN_BOOST_BIT,
 )
 from .cli import prefix_choice
 from .io import ec_read, ec_rmw, ec_write
@@ -74,6 +76,7 @@ def _read_control_state():
         "table_active": table_active,
         "independent_active": table_active and independent,
         "zero_rpm_warning": bool(ap_oem & 0x20),
+        "fan_boost": bool(ec_read(ADDR_MAFAN_CTL) & FAN_BOOST_BIT),
     }
 
 
@@ -153,6 +156,10 @@ def cmd_read(args):
         f"(XRAM[0x{ADDR_FAN_SWITCH_SPEED:04X}] = 0x{sw:02x})"
     )
     print(
+        f"FanBoost             : {'on' if state['fan_boost'] else 'off'} "
+        f"(XRAM[0x{ADDR_MAFAN_CTL:04X}].bit6)"
+    )
+    print(
         "Fan relationship     : "
         + (
             "independent"
@@ -177,7 +184,8 @@ def cmd_monitor(args):
     print("Gates: A=APExist C=Custom M=FanMgmt\n")
     hdr = (
         f"{'Time':<8} | {'CPU':>5} | {'Path':<4} | {'Link':<4} | "
-        f"{'Warn':<4} | {'Gates':<11} | {'MainRPM':>7} | {'SecRPM':>7} | "
+        f"{'Boost':<5} | {'Warn':<4} | {'Gates':<11} | "
+        f"{'MainRPM':>7} | {'SecRPM':>7} | "
         f"{'DutyM(R)':>8} | {'DutyS(L)':>8}"
     )
     print(hdr)
@@ -188,11 +196,13 @@ def cmd_monitor(args):
             state = _read_control_state()
             path = "AP" if state["table_active"] else "EC"
             link = "IND" if state["independent_active"] else "LINK"
+            boost = "ON" if state["fan_boost"] else "OFF"
             warning = "ZERO" if state["zero_rpm_warning"] else "-"
             gate_bits = _format_gate_bits(state)
             print(
                 f"{time.strftime('%H:%M:%S'):<8} | {cpu_t:>3}\u00b0C | "
-                f"{path:<4} | {link:<4} | {warning:<4} | {gate_bits:<11} | "
+                f"{path:<4} | {link:<4} | {boost:<5} | {warning:<4} | "
+                f"{gate_bits:<11} | "
                 f"{mr:>7} | {sr:>7} | {_format_duty(dm):>8} | "
                 f"{_format_duty(ds):>8}",
                 flush=True,
@@ -382,11 +392,23 @@ def cmd_control(args):
         cmd_bios(args)
 
 
+def _toggle_fan_boost():
+    old = ec_read(ADDR_MAFAN_CTL)
+    requested = old ^ FAN_BOOST_BIT
+    ec_write(ADDR_MAFAN_CTL, requested)
+    got = ec_read(ADDR_MAFAN_CTL)
+    enabled = bool(got & FAN_BOOST_BIT)
+    expected = bool(requested & FAN_BOOST_BIT)
+    status = "OK" if enabled == expected else "FAILED"
+    print(
+        f"  FanBoost: {'on' if enabled else 'off'} "
+        f"(XRAM[0x{ADDR_MAFAN_CTL:04X}]: 0x{old:02x} -> 0x{got:02x}, {status})"
+    )
+
+
 def _parse_set_values(percentages, explicit_relationship):
-    if len(percentages) > 2 or (not percentages and explicit_relationship is None):
-        raise ValueError(
-            "fan set expects -i/-l and/or one/two percentages"
-        )
+    if len(percentages) > 2:
+        raise ValueError("fan set accepts at most two percentages")
 
     if not percentages:
         return None, explicit_relationship
@@ -407,14 +429,24 @@ def _parse_set_values(percentages, explicit_relationship):
 
 def cmd_set(args):
     """Set fixed duty values or select linked/independent table lookup."""
+    toggle_boost = getattr(args, "turbo", False)
+    if not args.percentages and args.independent is None and not toggle_boost:
+        raise ValueError(
+            "fan set expects -t, -i/-l, and/or one/two percentages"
+        )
+
     percentages, enable_independent = _parse_set_values(
         args.percentages,
         args.independent,
     )
 
+    if toggle_boost:
+        _toggle_fan_boost()
+
     if percentages is None:
-        _set_independent_gate(enable_independent)
-        _enable_ap_fan_control()
+        if enable_independent is not None:
+            _set_independent_gate(enable_independent)
+            _enable_ap_fan_control()
         return
 
     cpu_pct, gpu_pct = percentages
@@ -530,6 +562,12 @@ def register(subparsers):
         action="store_const",
         const=False,
         help="Use one shared table index",
+    )
+    set_cmd.add_argument(
+        "-t",
+        "--turbo",
+        action="store_true",
+        help=f"Toggle FanBoost (XRAM[0x{ADDR_MAFAN_CTL:04X}].bit6)",
     )
     set_cmd.set_defaults(independent=None)
     set_cmd.set_defaults(func=cmd_set)
