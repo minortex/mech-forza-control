@@ -1,11 +1,11 @@
 [project]
-name = "mechrevo-ec"
+name = "mech-forza-control"
 version = "0.1.0"
 description = "Mechrevo notebook EC direct control"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
-    { name = "mechrevo-ec contributors" },
+    { name = "mech-forza-control contributors" },
 ]
 license = "MIT"
 keywords = ["ec", "mechrevo", "fan-control", "keyboard-backlight"]
@@ -30,7 +30,6 @@ include = [
     "/README.md",
     "/pyproject.toml",
     "/docs",
-    "/kernel",
     "/src",
 ]
 

@@ -24,5 +24,5 @@ build() {
 
 package() {
   cd "$srcdir/$pkgname"
-  python -m installer --destdir="$pkgdir" dist/*.whl
+  python -m installer --destdir="$pkgdir" dist/mech_forza_control-*.whl
 }
