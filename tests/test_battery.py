@@ -3,7 +3,7 @@ from argparse import Namespace, ArgumentTypeError
 
 from src import battery
 from src import io
-from src.config import (
+from src.registers import (
     ADDR_AP_OEM,
     ADDR_BATTERY_CHARGE_LIMIT_UP,
     ADDR_BATTERY_CHARGE_MODE,

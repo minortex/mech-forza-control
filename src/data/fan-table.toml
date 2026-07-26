@@ -1,0 +1,17 @@
+# Default RamFan1p5 profile.
+#
+# Each fan contains 16 logical levels. Temperatures are degrees Celsius and
+# duty values are percentages. The EC stores duty as percentage * 2.
+# The write layout follows the firmware's RamFan1p5 table transformation:
+# logical UpT entries are shifted into the EC UpT array, the final EC UpT is
+# 0xFF, and logical DownT entries are shifted by one EC slot.
+
+[main]
+up = [40, 45, 50, 55, 60, 65, 68, 72, 76, 80, 83, 86, 89, 92, 95, 255]
+down = [35, 40, 45, 50, 55, 60, 63, 67, 71, 75, 78, 81, 84, 87, 90, 95]
+duty = [20, 30, 35, 44, 48, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+
+[second]
+up = [40, 45, 50, 55, 60, 65, 68, 72, 76, 80, 83, 86, 89, 92, 95, 255]
+down = [35, 40, 45, 50, 55, 60, 63, 67, 71, 75, 78, 81, 84, 87, 90, 95]
+duty = [10, 20, 25, 30, 35, 40, 45, 50, 65, 70, 75, 80, 85, 90, 95, 100]

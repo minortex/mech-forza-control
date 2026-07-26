@@ -1,7 +1,32 @@
 """Base EC performance-policy switching: Office / Gaming / Turbo."""
 
-from .config import ADDR_MAFAN_CTL, FAN_BOOST_BIT, MODES
+from .registers import (
+    ADDR_MAFAN_CTL,
+    CTL_NORMAL,
+    CTL_TURBO,
+    CTL_USER_HI,
+    FAN_BOOST_BIT,
+)
 from .io import ec_read, ec_write
+
+
+MODES = {
+    "office": {
+        "desc": "Office (quiet policy)",
+        "mode": 0,
+        "ctl": CTL_USER_HI,
+    },
+    "gaming": {
+        "desc": "Gaming (balanced policy)",
+        "mode": 1,
+        "ctl": CTL_NORMAL,
+    },
+    "turbo": {
+        "desc": "Turbo (performance policy)",
+        "mode": 2,
+        "ctl": CTL_TURBO,
+    },
+}
 
 
 _MODE_MASK = 0x90

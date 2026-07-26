@@ -4,8 +4,16 @@ Levels (bit7:5), brightest to dimmest:
   010 (2) > 100 (4) > 001 (1) > 011 (3) > 000 (0 off)
 """
 
-from .config import ADDR_BACKLIGHT, BACKLIGHT_CYCLE, BACKLIGHT_LABELS
+from .registers import ADDR_BACKLIGHT
 from .io import ec_read, ec_write
+
+
+BACKLIGHT_LABELS = {
+    0: "off",
+    1: "dim",
+    2: "bright",
+}
+BACKLIGHT_CYCLE = [0, 1, 2]
 
 
 def _set_level(lvl):

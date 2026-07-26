@@ -10,7 +10,7 @@ import atexit
 import platform
 
 from src.backends.base import EcBackend
-from src.config import EC_MMIO_MAX, EC_MMIO_MIN
+from src.registers import EC_MMIO_MAX, EC_MMIO_MIN
 
 _BACKEND: EcBackend | None = None
 _ATEXIT_REGISTERED = False

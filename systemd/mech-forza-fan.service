@@ -1,0 +1,12 @@
+[Unit]
+Description=Restore Mechrevo EC fan profile
+After=systemd-modules-load.service
+ConditionPathExists=/dev/mechrevo-ec
+ConditionPathExists=/etc/mech-forza-control/fan-table.toml
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/mfc fan table --reset
+
+[Install]
+WantedBy=multi-user.target

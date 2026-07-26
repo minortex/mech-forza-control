@@ -10,7 +10,7 @@ import mmap
 import os
 import struct
 
-from src.config import EC_MMIO_BASE, EC_MMIO_SIZE
+from src.registers import EC_MMIO_BASE, EC_MMIO_SIZE
 
 
 # Linux generic ioctl encoding (asm-generic/ioctl.h).

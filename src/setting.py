@@ -8,16 +8,43 @@ Commands:
   ec setting acrecov    on|off  — toggle AC recovery (ApExistFlag + XRAM[1830])
 """
 
-from .config import (
+from .registers import (
     ADDR_AP_OEM,
     ADDR_AP_OEM9,
     ADDR_BIOS_OEM_BYTE,
     ADDR_STATUS_BYTE,
     ADDR_TRIGGER_BYTE,
-    SETTING_LABELS,
 )
 from .cli import prefix_choice
 from .io import ec_read, ec_write
+
+
+SETTING_LABELS = {
+    "winlock": {
+        "addr": ADDR_STATUS_BYTE,
+        "bit": 0,
+        "on": "locked",
+        "off": "unlocked",
+    },
+    "fnlock": {
+        "addr": ADDR_BIOS_OEM_BYTE,
+        "bit": 4,
+        "on": "locked",
+        "off": "unlocked",
+    },
+    "usbchg": {
+        "addr": ADDR_TRIGGER_BYTE,
+        "bit": 4,
+        "on": "on",
+        "off": "off",
+    },
+    "acrecov": {
+        "addr": ADDR_AP_OEM9,
+        "bit": 3,
+        "on": "on",
+        "off": "off",
+    },
+}
 
 
 # ── helpers ──────────────────────────────────────────────────────────

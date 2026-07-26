@@ -4,7 +4,7 @@ import argparse
 import os
 
 from .cli import prefix_choice
-from .config import (
+from .registers import (
     ADDR_AP_OEM,
     ADDR_BATTERY_CHARGE_LIMIT_UP,
     ADDR_BATTERY_CHARGE_MODE,

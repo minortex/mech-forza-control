@@ -2,7 +2,7 @@
 
 import time
 
-from .config import (
+from .registers import (
     ADDR_AP_CTL,
     ADDR_AP_OEM,
     ADDR_AP_OEM10,
@@ -28,11 +28,10 @@ from .config import (
     ADDR_GPU_FAN_DUTY_BASE,
     ADDR_GPU_FAN_UPT_BASE,
     ADDR_GPU_FAN_DNT_BASE,
-    DEFAULT_CPU_FAN,
-    DEFAULT_GPU_FAN,
     FAN_BOOST_BIT,
 )
 from .cli import prefix_choice
+from .fan_profile import FanCurve, load_fan_profile
 from .io import ec_read, ec_rmw, ec_write
 
 ROM_TABLE_MODES = {
@@ -213,6 +212,9 @@ def cmd_monitor(args):
 
 
 def cmd_table(args):
+    profile_file = getattr(args, "file", None)
+    if profile_file and not getattr(args, "reset", False):
+        raise ValueError("fan table --file requires --reset")
     if getattr(args, "reset", False):
         cmd_default(args)
         return
@@ -473,15 +475,16 @@ def cmd_set(args):
 
 
 def cmd_default(args):
-    """Restore configured default curves while preserving linked/independent."""
+    """Restore a configured profile while preserving linked/independent."""
+    profile = load_fan_profile(getattr(args, "file", None))
     independent = bool(ec_read(ADDR_FANCTL_RESP) & 0x80)
 
-    def _restore(base_upt, base_dnt, base_duty, table):
+    def _restore(base_upt, base_dnt, base_duty, curve: FanCurve):
         for i in range(16):
-            ec_write(base_upt + i, table["upT"][i + 1] if i < 15 else 255)
+            ec_write(base_upt + i, curve.up[i + 1] if i < 15 else 255)
             if i < 15:
-                ec_write(base_dnt + i + 1, table["dnT"][i])
-            ec_write(base_duty + i, min(table["duty"][i], 100) * 2)
+                ec_write(base_dnt + i + 1, curve.down[i])
+            ec_write(base_duty + i, curve.duty[i] * 2)
 
     ec_rmw(ADDR_AP_CTL, clear_bits=0x04)
     _clear_non_fan_overrides()
@@ -489,15 +492,16 @@ def cmd_default(args):
         ADDR_CPU_FAN_UPT_BASE,
         ADDR_CPU_FAN_DNT_BASE,
         ADDR_CPU_FAN_DUTY_BASE,
-        DEFAULT_CPU_FAN,
+        profile.main,
     )
     _restore(
         ADDR_GPU_FAN_UPT_BASE,
         ADDR_GPU_FAN_DNT_BASE,
         ADDR_GPU_FAN_DUTY_BASE,
-        DEFAULT_GPU_FAN,
+        profile.second,
     )
-    print("  Fan tables restored to configured defaults (UpT, DownT, Duty)")
+    print(f"  Fan profile loaded: {profile.source}")
+    print("  Fan tables restored (UpT, DownT, Duty)")
     _set_independent_gate(independent)
     _enable_ap_fan_control(clear_overrides=False)
 
@@ -515,6 +519,11 @@ def register(subparsers):
         "--reset",
         action="store_true",
         help="Restore configured default AP fan curves",
+    )
+    table.add_argument(
+        "--file",
+        metavar="PATH",
+        help="Load this TOML profile instead of the configured/default profile",
     )
     table.set_defaults(func=cmd_table)
     control = sub.add_parser(

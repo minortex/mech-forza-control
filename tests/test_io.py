@@ -3,7 +3,8 @@ from argparse import Namespace
 
 from src import fan, mode
 from src import io
-from src.config import (
+from src.fan_profile import FanCurve, FanProfile
+from src.registers import (
     ADDR_AP_CTL,
     ADDR_AP_OEM,
     ADDR_AP_OEM10,
@@ -16,8 +17,6 @@ from src.config import (
     ADDR_PL2,
     ADDR_PL4,
     ADDR_TCC,
-    DEFAULT_CPU_FAN,
-    DEFAULT_GPU_FAN,
     EC_MMIO_MAX,
     FAN_BOOST_BIT,
 )
@@ -315,14 +314,28 @@ def test_fan_read_prints_runtime_values_before_control_details(capsys):
     ]
 
 
-def test_fan_table_reset_preserves_relationship():
+def test_fan_table_file_requires_reset():
+    io._set_backend_for_testing(FakeBackend())
+
+    with pytest.raises(ValueError, match="--file requires --reset"):
+        fan.cmd_table(Namespace(reset=False, file="custom.toml"))
+
+
+def test_fan_table_reset_preserves_relationship(monkeypatch):
     backend = FakeBackend({ADDR_FANCTL_RESP: 0x80})
     io._set_backend_for_testing(backend)
+    main = FanCurve(tuple(range(16)), tuple(range(16)), (20,) * 16)
+    second = FanCurve(tuple(range(16)), tuple(range(16)), (10,) * 16)
+    monkeypatch.setattr(
+        fan,
+        "load_fan_profile",
+        lambda path=None: FanProfile(main, second, "test-profile.toml"),
+    )
 
-    fan.cmd_table(Namespace(reset=True))
+    fan.cmd_table(Namespace(reset=True, file=None))
 
-    assert backend.values[ADDR_CPU_FAN_DUTY_BASE] == DEFAULT_CPU_FAN["duty"][0] * 2
-    assert backend.values[ADDR_GPU_FAN_DUTY_BASE] == DEFAULT_GPU_FAN["duty"][0] * 2
+    assert backend.values[ADDR_CPU_FAN_DUTY_BASE] == 40
+    assert backend.values[ADDR_GPU_FAN_DUTY_BASE] == 20
     assert backend.values[ADDR_FANCTL_RESP] & 0x80
     assert backend.values[ADDR_AP_CTL] & 0x04
 
