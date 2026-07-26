@@ -29,6 +29,8 @@ packages = ["src"]
 include = [
     "/README.md",
     "/pyproject.toml",
+    "/docs",
+    "/kernel",
     "/src",
 ]
 

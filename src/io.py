@@ -1,8 +1,8 @@
 r"""Cross-platform EC byte I/O.
 
 Platform backends:
-  Linux (preferred) - /dev/mem mmap at 0xFED50000, 4 KB
-  Linux (fallback)  - /proc/acpi/call via acpi_call module (SB.INOU.ECRR / ECRW)
+  Linux (default)   - /dev/mechrevo-ec ioctl bridge (INOU.ECRR / ECRW)
+  Linux (explicit)  - /proc/acpi/call or unsafe /dev/mem compatibility backends
   Windows           - \\.\ACPIDriver + DeviceIoControl
 """
 
@@ -86,6 +86,12 @@ def ec_read_word_be(hi_addr: int, lo_addr: int) -> int:
 
 
 def ec_rmw(addr: int, set_bits: int = 0, clear_bits: int = 0) -> int:
+    _check_addr(addr)
+    backend = _get_backend()
+    backend_rmw = getattr(backend, "ec_rmw", None)
+    if callable(backend_rmw):
+        return backend_rmw(addr, set_bits & 0xFF, clear_bits & 0xFF)
+
     val = (ec_read(addr) | (set_bits & 0xFF)) & ~(clear_bits & 0xFF)
     ec_write(addr, val)
     return val

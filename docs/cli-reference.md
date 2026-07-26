@@ -1,6 +1,8 @@
 # CLI 命令参考
 
-所有 `ec` 命令需要 sudo 运行（读写 `/dev/mem`）。
+Linux 默认通过 `/dev/mechrevo-ec` 内核桥接访问 `INOU0000.ECRR/ECRW`，不会静默回退到
+`/dev/mem`。设备节点默认为 `0600`，因此命令仍需 sudo。驱动构建和 DKMS 打包见独立仓库
+[`mech-forza-kmod`](https://github.com/minortex/mech-forza-kmod)。
 
 ```bash
 sudo uv run mfc <command>

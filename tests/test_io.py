@@ -81,6 +81,26 @@ def test_ec_rmw_reads_writes_and_returns_modified_value():
     assert backend.writes == [(10, 0b0010_0011)]
 
 
+def test_ec_rmw_uses_backend_atomic_operation_when_available():
+    class AtomicBackend(FakeBackend):
+        def __init__(self):
+            super().__init__()
+            self.rmw_calls = []
+
+        def ec_rmw(self, addr, set_bits, clear_bits):
+            self.rmw_calls.append((addr, set_bits, clear_bits))
+            return 0x5A
+
+    backend = AtomicBackend()
+    io._set_backend_for_testing(backend)
+
+    result = io.ec_rmw(10, set_bits=0x103, clear_bits=0x180)
+
+    assert result == 0x5A
+    assert backend.rmw_calls == [(10, 0x03, 0x80)]
+    assert backend.writes == []
+
+
 def test_close_closes_and_clears_cached_backend():
     backend = FakeBackend()
     io._set_backend_for_testing(backend)

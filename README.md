@@ -11,7 +11,12 @@ Currently support almost all settings in official control center.
 > [!IMPORTANT]
 > Remember to mask or uninstall tccd first, or fan may not take effect.
 
-On Linux: need `sudo` to write `/dev/mem`
+On Linux, the default backend is the GX4HRXL-specific ACPI kernel bridge at
+`/dev/mechrevo-ec`; it does not map `/dev/mem`. The driver is maintained separately in
+[`mech-forza-kmod`](https://github.com/minortex/mech-forza-kmod). Install its DKMS package
+and load it manually after ensuring no other driver owns `INOU0000`.
+
+The device is root-only by default, so the CLI still needs `sudo`:
 
 ```bash
 cd mechrevo-forza-control
@@ -54,4 +59,3 @@ The location of config is in `src/config.py`, you can manually change the fan cu
 - [@w568w](https://github.com/w568w) for providing decompiled official control center.
 - [@LongSang01](https://github.com/LongSang01) for switch fixed tdp on this laptop.
 - Peoples in [this post](https://gist.github.com/w568w/b2fc5f9d1f4dff13efe751abec27b396).
-
