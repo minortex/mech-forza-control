@@ -57,13 +57,13 @@ Since the EC does not enforce cryptographic signature verification, you can bypa
 
 Important Note: You must flash the modded EC firmware for hysteresis control to work. On stock firmware, the register doesn't implement the lower threshold function, charging behavior will remain unchanged.
 
-You can try flashing the customized firmware here (provided strictly as-is, with no warranty):
+You can try manually patch official firmware (provided strictly as-is, with no warranty):
 
-[https://github.com/minortex/ec_reverse/tree/main/firmware_mods/GXxHXxx_21.200]
+[patch script](https://github.com/minortex/ec_reverse/tree/main/firmware_mods)
 
 ## Config
 
-The location of config is in `src/config.py`, you can manually change the fan curve.
+The location of config is in `/etc/mech-forza-control/fan-table.toml`, you can manually change the fan curve.
 
 ## Thanks
 
