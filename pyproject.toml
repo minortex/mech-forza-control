@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 authors = [
     { name = "mech-forza-control contributors" },
 ]
-license = "MIT"
+license = "GPL-3.0-only"
 keywords = ["ec", "mechrevo", "fan-control", "keyboard-backlight"]
 
 [project.scripts]

@@ -69,4 +69,8 @@ The location of config is in `/etc/mech-forza-control/fan-table.toml`, you can m
 
 - [@w568w](https://github.com/w568w) for providing decompiled official control center.
 - [@LongSang01](https://github.com/LongSang01) for switch fixed tdp on this laptop.
-- Peoples in [this post](https://gist.github.com/w568w/b2fc5f9d1f4dff13efe751abec27b396).
+- People in [this post](https://gist.github.com/w568w/b2fc5f9d1f4dff13efe751abec27b396).
+
+## License
+
+This project is licensed under the GPL-3.0-only license.
