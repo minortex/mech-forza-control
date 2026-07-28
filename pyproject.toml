@@ -12,6 +12,7 @@ keywords = ["ec", "mechrevo", "fan-control", "keyboard-backlight"]
 
 [project.scripts]
 mfc = "src.__main__:main"
+mfc-kde-osd = "src.kde_osd:main"
 
 [dependency-groups]
 dev = [
@@ -31,6 +32,7 @@ include = [
     "/pyproject.toml",
     "/docs",
     "/src",
+    "/systemd",
 ]
 
 [tool.pytest.ini_options]
