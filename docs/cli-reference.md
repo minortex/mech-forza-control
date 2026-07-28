@@ -178,38 +178,62 @@ uv run mfc setting acrecov off    # 关闭
 
 ---
 
-## mfc bat — 充电控制（电池寿命保护与限制电压）
+## mfc bat — 充电阈值控制
 
-通过 XRAM[1977] 与 XRAM[1958] 寄存器直接设置电池的充电上限百分比与限制电压模式。
+通过 `XRAM[1977]`（上限，`0x07B9`）与 `XRAM[2000]`（下限，`0x07D0`）直接设置电池充电阈值。
 
-### 查看充电限制状态
+- `0x07B9[6:0]`：上限百分比；bit7 为停止/抑制充电标志。
+- `0x07D0[6:0]`：下限百分比；bit7 为当前是否处于充电周期中的 phase/cycle-active 标志。
+
+### 查看当前状态
 
 ```bash
 uv run mfc bat status
 ```
 
-输出当前充电限制上限（setc，`XRAM[1977]`）、限制电压模式（setv，`XRAM[1958]`），以及实时电池信息。
+输出当前 RSOC、上下限寄存器原始值、stop-bit / cycle-active 标志，以及实时电池信息。
 
-### 设置充电上限百分比 (setc)
-
-```bash
-uv run mfc bat setc <limit>
-```
-
-其中 `<limit>` 为 0-100 的整数（写入时保留 `XRAM[1977]` bit7，并确保 `XRAM[1857]` bit0 的 `ApExistFlag` 处于开启状态）：
-- `0`：恢复默认的 100% 充电上限。
-- `1-100`：设置具体的充电限制百分比（例如设置 `80` 表示充电至 80% 即停止）。
-
-### 设置限制电压模式 (setv)
+### 仅设置上限（上限模式）
 
 ```bash
-uv run mfc bat setv <mode>
+uv run mfc bat set -u <up>
 ```
 
-通过设置 `XRAM[1958]` 的 bits [5:4] 来限制电池的充电截止电压（写入时保留触控板 LED 等其他 bit 状态）：
-- `capacity`：高电量模式 (100% 电压上限，bits [5:4] = `00`)。
-- `balanced`：均衡模式 (~80% 电压上限，bits [5:4] = `01`)。
-- `stationary`：固定保养模式 (~60% 电压上限，bits [5:4] = `10`)。
+其中 `<up>` 为 `0-100` 的整数：
+- `0`：恢复为默认的 `100%/unrestricted`。
+- `1-100`：设置具体的充电上限（例如 `80` 表示达到 80% 后应停止充电）。
+
+> [!NOTE]
+> 上限控制通常需要额外先启用：
+> 1. 运行 w568 的脚本开启；或
+> 2. 刷入支持的 BIOS/固件，并在 BIOS 中打开 charge limit 选项。
+
+### 设置下限/上限窗口（迟滞模式）
+
+```bash
+uv run mfc bat set -d <down> -u <up>
+```
+
+- `<down>`：`1-95`
+- `<up>`：`2-99`
+- 且必须满足 `<down> < <up>`
+
+工具会按 `flexicharge.py` 的语义初始化两个 flag：
+- 先写 `0x07D0`，再写 `0x07B9`；
+- 若当前 RSOC `<= down`，则初始化为 active cycle；
+- 若当前 RSOC `>= up`，则初始化为 stopped / inhibited；
+- 若当前 RSOC 位于中间区间，则默认进入 hold；若重设的是同一窗口且原本已处于 active cycle，则保留 active 状态。
+
+> [!WARNING]
+> 下限/上限窗口功能必须刷入兼容的 EC 固件后才能真正生效。原厂 EC 上寄存器写入可能成功，但充电行为未必会变化。
+
+### 禁用阈值窗口
+
+```bash
+uv run mfc bat set --disable
+```
+
+清空 `0x07D0` 与 `0x07B9`，恢复为 unrestricted 的默认上限行为。
 
 ---
 

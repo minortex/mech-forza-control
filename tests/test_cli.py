@@ -1,6 +1,6 @@
 import pytest
 
-from src import fan, mode, setting
+from src import battery, fan, mode, setting
 from src.__main__ import build_parser
 from src.cli import resolve_unique_prefix
 
@@ -33,12 +33,74 @@ def test_commands_and_enum_values_accept_unique_prefixes(
     assert getattr(args, operation_dest) == operation
 
 
-def test_battery_enum_value_is_canonicalized_from_prefix():
-    args = build_parser().parse_args(["bat", "setv", "sta"])
+def test_battery_set_parses_upper_only_mode():
+    args = build_parser().parse_args(["bat", "set", "-u", "80"])
 
     assert args.command == "bat"
-    assert args.bat_op == "setv"
-    assert args.mode == "stationary"
+    assert args.bat_op == "set"
+    assert args.up == 80
+    assert args.down is None
+    assert args.disable is False
+    assert args.func is battery.cmd_set
+
+
+def test_battery_set_parses_window_mode_from_prefixes():
+    args = build_parser().parse_args(["bat", "se", "-d", "40", "-u", "80"])
+
+    assert args.command == "bat"
+    assert args.bat_op == "set"
+    assert args.down == 40
+    assert args.up == 80
+    assert args.disable is False
+    assert args.func is battery.cmd_set
+
+
+def test_battery_set_parses_disable_mode():
+    args = build_parser().parse_args(["bat", "set", "--disable"])
+
+    assert args.command == "bat"
+    assert args.bat_op == "set"
+    assert args.disable is True
+    assert args.up is None
+    assert args.down is None
+    assert args.func is battery.cmd_set
+
+
+def test_battery_help_mentions_enablement_and_ec_firmware(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        build_parser().parse_args(["bat", "-h"])
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "w568" in output
+    assert "compatible EC" in output
+
+
+def test_battery_set_help_mentions_window_examples(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        build_parser().parse_args(["bat", "set", "-h"])
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "mfc bat set -u 80" in output
+    assert "mfc bat set -d 40 -u 80" in output
+    assert "compatible EC firmware" in output
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["bat", "set"],
+        ["bat", "set", "-d", "40"],
+        ["bat", "set", "--disable", "-u", "80"],
+    ],
+)
+def test_battery_invalid_parser_combinations_are_rejected(argv, capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        build_parser().parse_args(argv)
+
+    assert exc_info.value.code == 2
+    assert capsys.readouterr().err
 
 
 def test_fan_control_authority_accepts_unique_prefix():

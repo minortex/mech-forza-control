@@ -34,28 +34,32 @@ Help information via `-h` parameters.
 
 ### About battery control
 
-This laptop support control the charging process through capacity and voltage limit. However, you can't control it via official control center because the EC register is not initialized correctly.
+This laptop can control charging through EC charge thresholds, but the vendor setup leaves part of the path uninitialized, so the official control center usually cannot make it work reliably.
 
+If you want to use the upper threshold control, enable it first by one of these ways:
+1. follow this [guide](https://gist.github.com/w568w/957976b59906e0ce5d6c13ad342e1593)
+2. flash [SlimBook firmware BIOS N1.1.14GOS07 + EC2.12](https://slimbook.com/en/downloads?ruta=%2FLaptops%2FEvo-14%2FRyzen-8845HS%2FBIOS) and then turn on the charge limit option in BIOS. Note that the charge limit menu is removed in the latest version.
 
-If you want to control the capacity limit, here are two ways:
-1. follow this [guide](https://gist.github.com/w568w/957976b59906e0ce5d6c13ad342e1593) 
-2. flash [slimbook firmware](https://slimbook.com/en/downloads?ruta=%2FLaptops%2FEvo-14%2FRyzen-8845HS%2FBIOS) then turn on the charge limit on BIOS.
-
-then use `mfc bat setc <limit>`.
-
-Without modifying the EC firmware, the voltage limit `setv` or the official control center will never take effect.
+Then use `mfc bat set -u <limit>`.
 
 ---
 
-> [!WARNING]
-> IT'S REALLY DANGEROUS TO FLASH EC IF YOU DIDN'T HAVE A SPI PROGRAMMER!
-> YOU CAN TRY FLASHING IT VIA `ifux64.efi`, BUT IT TAKES HIGH RISKS!
-
 Moreover, most of users charge limit is limit to about 16.4v, which is below the charge limit voltage by 1V, making the battery can't be charged to full so the battery health drops quickly.
 
-Luckily, the laptop EC has no signing verification, we can flash it with custom EC firmware.
+Since the EC does not enforce cryptographic signature verification, you can bypass this limitation by flashing a modded EC firmware:
 
-You can try flash [this](https://github.com/minortex/ec_reverse/tree/main/firmware_mods/GXxHXxx_21.200), with absolutely no warranty.
+> [!WARNING]
+> FLASHING EC FIRMWARE WITHOUT A EXTERNAL SPI PROGRAMMER CARRIES RISK OF BRICKING YOUR DEVICE!
+> WHILE FLASHING VIA `ifux64.efi` IS POSSIBLE, DO SO AT YOUR OWN RISK!
+
+- Unlocked Charge Voltage: Removes the 16.4V ceiling, allowing the battery to reach its true full capacity.
+- Hysteresis Charging Window: Supports configurable lower and upper thresholds (e.g., stops at 80%, resumes at 70%) to avoid rapid, wear-inducing charge cycles.
+
+Important Note: You must flash the modded EC firmware for hysteresis control to work. On stock firmware, the register doesn't implement the lower threshold function, charging behavior will remain unchanged.
+
+You can try flashing the customized firmware here (provided strictly as-is, with no warranty):
+
+[https://github.com/minortex/ec_reverse/tree/main/firmware_mods/GXxHXxx_21.200]
 
 ## Config
 
