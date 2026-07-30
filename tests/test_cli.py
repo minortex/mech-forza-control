@@ -40,7 +40,6 @@ def test_battery_set_parses_upper_only_mode():
     assert args.bat_op == "set"
     assert args.up == 80
     assert args.down is None
-    assert args.disable is False
     assert args.func is battery.cmd_set
 
 
@@ -51,19 +50,15 @@ def test_battery_set_parses_window_mode_from_prefixes():
     assert args.bat_op == "set"
     assert args.down == 40
     assert args.up == 80
-    assert args.disable is False
     assert args.func is battery.cmd_set
 
 
-def test_battery_set_parses_disable_mode():
-    args = build_parser().parse_args(["bat", "set", "--disable"])
+def test_battery_parses_charge_full_mode():
+    args = build_parser().parse_args(["bat", "charge-full"])
 
     assert args.command == "bat"
-    assert args.bat_op == "set"
-    assert args.disable is True
-    assert args.up is None
-    assert args.down is None
-    assert args.func is battery.cmd_set
+    assert args.bat_op == "charge-full"
+    assert args.func is battery.cmd_charge_full
 
 
 def test_battery_help_mentions_enablement_and_ec_firmware(capsys):
@@ -92,7 +87,7 @@ def test_battery_set_help_mentions_window_examples(capsys):
     [
         ["bat", "set"],
         ["bat", "set", "-d", "40"],
-        ["bat", "set", "--disable", "-u", "80"],
+        ["bat", "set", "-u", "0"],
     ],
 )
 def test_battery_invalid_parser_combinations_are_rejected(argv, capsys):

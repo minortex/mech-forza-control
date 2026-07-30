@@ -199,9 +199,7 @@ uv run mfc bat status
 uv run mfc bat set -u <up>
 ```
 
-其中 `<up>` 为 `0-100` 的整数：
-- `0`：恢复为默认的 `100%/unrestricted`。
-- `1-100`：设置具体的充电上限（例如 `80` 表示达到 80% 后应停止充电）。
+其中 `<up>` 为 `1-99` 的整数，例如 `80` 表示达到 80% 后应停止充电。
 
 > [!NOTE]
 > 上限控制通常需要额外先启用：
@@ -227,13 +225,18 @@ uv run mfc bat set -d <down> -u <up>
 > [!WARNING]
 > 下限/上限窗口功能必须刷入兼容的 EC 固件后才能真正生效。原厂 EC 上寄存器写入可能成功，但充电行为未必会变化。
 
-### 禁用阈值窗口
+### 取消限制并充到 100%
 
 ```bash
-uv run mfc bat set --disable
+uv run mfc bat charge-full
 ```
 
-清空 `0x07D0` 与 `0x07B9`，恢复为 unrestricted 的默认上限行为。
+工具在同一个事务中先清空 `0x07D0`，再清空 `0x07B9`，立即解除
+FlexiCharge、upper-only 和 stop/inhibit 状态，允许电池充到 100%。实际是否开始充电仍取决于
+AC 连接、电池温度和硬件保护条件。
+
+兼容 v2.2 的 EC 固件会异步把 lower=0 写入持久化配置；`mfc bat status` 会显示保存记录及
+`A5/78`（待提交）或 `55/AA`（已消费）握手状态。
 
 ---
 

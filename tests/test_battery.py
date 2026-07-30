@@ -7,6 +7,9 @@ from src.registers import (
     ADDR_AP_OEM,
     ADDR_BATTERY_BASE_VOLTAGE,
     ADDR_BATTERY_CHARGE_LIMIT_DOWN,
+    ADDR_BATTERY_CHARGE_LIMIT_LOW_SHADOW,
+    ADDR_BATTERY_CHARGE_LIMIT_SAVE_MAGIC_0,
+    ADDR_BATTERY_CHARGE_LIMIT_SAVE_MAGIC_1,
     ADDR_BATTERY_CHARGE_LIMIT_UP,
     ADDR_BATTERY_CHARGE_MODE,
     ADDR_BATTERY_CHARGE_TARGET,
@@ -48,7 +51,7 @@ def test_battery_status_displays_upper_only_state(capsys):
     assert "limit=100%/unrestricted, stop-bit=clear" in output
     assert "XRAM[0x07D0] lower = 0x00" in output
     assert "limit=0%, cycle-active=no" in output
-    assert "Mode:                 stock upper-only behavior" in output
+    assert "Mode:                 unrestricted; charging is allowed to 100%" in output
     assert "Cycle count:          42" in output
     assert "Real-time voltage:    16818 mV" in output
     assert "Base voltage:         17600 mV" in output
@@ -107,22 +110,23 @@ def test_battery_set_upper_only_sets_stop_bit_when_rsoc_is_above_threshold(capsy
     ]
 
 
-def test_battery_set_upper_only_zero_restores_unrestricted_charging(capsys):
+def test_battery_charge_full_clears_limits_without_touching_charge_mode(capsys):
     backend = FakeBackend({
         ADDR_BATTERY_RSOC: 50,
         ADDR_BATTERY_CHARGE_LIMIT_UP: 0xD0,
         ADDR_BATTERY_CHARGE_LIMIT_DOWN: 0xA8,
+        ADDR_BATTERY_CHARGE_MODE: 0x28,
         ADDR_AP_OEM: 1,
     })
     io._set_backend_for_testing(backend)
 
-    battery.cmd_set(Namespace(disable=False, up=0, down=None))
+    battery.cmd_charge_full(Namespace())
 
     output = capsys.readouterr().out
-    assert "Configured upper threshold: 100%/unrestricted (lower hysteresis disabled)" in output
-    assert "Stop-bit initialization: cleared (unrestricted upper setting)" in output
+    assert "Charge limits cleared; charging is allowed up to 100%." in output
     assert backend.values[ADDR_BATTERY_CHARGE_LIMIT_DOWN] == 0x00
     assert backend.values[ADDR_BATTERY_CHARGE_LIMIT_UP] == 0x00
+    assert backend.values[ADDR_BATTERY_CHARGE_MODE] == 0x28
     assert backend.writes == [
         (ADDR_BATTERY_CHARGE_LIMIT_DOWN, 0x00),
         (ADDR_BATTERY_CHARGE_LIMIT_UP, 0x00),
@@ -190,38 +194,28 @@ def test_battery_set_window_starts_active_when_rsoc_is_below_lower_limit(capsys)
     assert backend.values[ADDR_BATTERY_CHARGE_LIMIT_UP] == 0x50
 
 
-def test_battery_disable_clears_limits_without_touching_charge_mode(capsys):
+def test_battery_status_displays_v22_persistence_state(capsys):
     backend = FakeBackend({
-        ADDR_BATTERY_RSOC: 65,
-        ADDR_BATTERY_CHARGE_LIMIT_UP: 0x50,
-        ADDR_BATTERY_CHARGE_LIMIT_DOWN: 0xA8,
-        ADDR_BATTERY_CHARGE_MODE: 0x28,
-        ADDR_AP_OEM: 1,
+        ADDR_BATTERY_RSOC: 60,
+        ADDR_BATTERY_CHARGE_LIMIT_UP: 0xD0,
+        ADDR_BATTERY_CHARGE_LIMIT_DOWN: 0x3C,
+        ADDR_BATTERY_CHARGE_LIMIT_LOW_SHADOW: 0xA8,
+        ADDR_BATTERY_CHARGE_LIMIT_SAVE_MAGIC_0: 0xA5,
+        ADDR_BATTERY_CHARGE_LIMIT_SAVE_MAGIC_1: 0x78,
     })
     io._set_backend_for_testing(backend)
 
-    battery.cmd_set(Namespace(disable=True, down=None, up=None))
+    battery.cmd_status(Namespace())
 
     output = capsys.readouterr().out
-    assert "FlexiCharge disabled; restored unrestricted stock upper setting" in output
-    assert backend.values[ADDR_BATTERY_CHARGE_LIMIT_DOWN] == 0x00
-    assert backend.values[ADDR_BATTERY_CHARGE_LIMIT_UP] == 0x00
-    assert backend.values[ADDR_BATTERY_CHARGE_MODE] == 0x28
-    assert backend.writes == [
-        (ADDR_BATTERY_CHARGE_LIMIT_DOWN, 0x00),
-        (ADDR_BATTERY_CHARGE_LIMIT_UP, 0x00),
-    ]
-
-
-def test_battery_set_rejects_disable_with_down():
-    with pytest.raises(ValueError, match="--disable cannot be combined with --down"):
-        battery.cmd_set(Namespace(disable=True, down=40, up=None))
+    assert "valid, saved lower=40%" in output
+    assert "commit requested/pending" in output
+    assert "runtime lower has not reached persistent storage yet" in output
 
 
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (Namespace(disable=False, down=40, up=100), "between 2 and 99"),
         (Namespace(disable=False, down=80, up=40), "less than upper threshold"),
     ],
 )
@@ -231,18 +225,16 @@ def test_battery_set_rejects_invalid_window_arguments(args, message):
 
 
 def test_upper_type_validator():
-    assert battery.upper_type("0") == 0
     assert battery.upper_type("80") == 80
-    assert battery.upper_type("100") == 100
 
     with pytest.raises(ArgumentTypeError, match="integer"):
         battery.upper_type("abc")
 
-    with pytest.raises(ArgumentTypeError, match="between 0 and 100"):
-        battery.upper_type("-1")
+    with pytest.raises(ArgumentTypeError, match="between 1 and 99"):
+        battery.upper_type("0")
 
-    with pytest.raises(ArgumentTypeError, match="between 0 and 100"):
-        battery.upper_type("101")
+    with pytest.raises(ArgumentTypeError, match="between 1 and 99"):
+        battery.upper_type("100")
 
 
 def test_lower_type_validator():

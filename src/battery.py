@@ -1,7 +1,7 @@
 """Battery charge threshold control.
 
 Upper-threshold support may need separate enablement first (for example the
-w568 script, or a supported BIOS/firmware with the BIOS charge-limit option
+w568's script, or a supported BIOS/firmware with the BIOS charge-limit option
 turned on). Lower-threshold hysteresis requires compatible EC firmware.
 """
 
@@ -14,6 +14,9 @@ from .registers import (
     ADDR_AP_OEM,
     ADDR_BATTERY_BASE_VOLTAGE,
     ADDR_BATTERY_CHARGE_LIMIT_DOWN,
+    ADDR_BATTERY_CHARGE_LIMIT_LOW_SHADOW,
+    ADDR_BATTERY_CHARGE_LIMIT_SAVE_MAGIC_0,
+    ADDR_BATTERY_CHARGE_LIMIT_SAVE_MAGIC_1,
     ADDR_BATTERY_CHARGE_LIMIT_UP,
     ADDR_BATTERY_CHARGE_TARGET,
     ADDR_BATTERY_CYCLE_COUNT,
@@ -43,7 +46,7 @@ SET_HELP = textwrap.dedent(
 
     Use -u/--up alone for stock upper-only behavior.
     Use -d/--down together with -u/--up for a lower/upper hysteresis window.
-    Use --disable to clear both registers and restore unrestricted charging.
+    Use `mfc bat charge-full` to clear all limits and allow charging to 100%.
     """
 )
 
@@ -51,7 +54,6 @@ SET_EPILOG = textwrap.dedent(
     """    Examples:
       mfc bat set -u 80
       mfc bat set -d 40 -u 80
-      mfc bat set --disable
 
     Notes:
       - Upper-threshold support may need separate enablement first: w568 script,
@@ -77,9 +79,9 @@ def _parse_int(value, *, label):
 
 def upper_type(value):
     limit = _parse_int(value, label="upper threshold")
-    if not 0 <= limit <= 100:
+    if not 1 <= limit <= 99:
         raise argparse.ArgumentTypeError(
-            "upper threshold must be between 0 and 100"
+            "upper threshold must be between 1 and 99"
         )
     return limit
 
@@ -174,6 +176,11 @@ def _limit_text(limit):
 def _read_state():
     high_raw = ec_read(ADDR_BATTERY_CHARGE_LIMIT_UP)
     low_raw = ec_read(ADDR_BATTERY_CHARGE_LIMIT_DOWN)
+    low_shadow = ec_read(ADDR_BATTERY_CHARGE_LIMIT_LOW_SHADOW)
+    save_magic = (
+        ec_read(ADDR_BATTERY_CHARGE_LIMIT_SAVE_MAGIC_0),
+        ec_read(ADDR_BATTERY_CHARGE_LIMIT_SAVE_MAGIC_1),
+    )
     return {
         "rsoc": ec_read(ADDR_BATTERY_RSOC),
         "high_raw": high_raw,
@@ -182,14 +189,20 @@ def _read_state():
         "low_raw": low_raw,
         "low": low_raw & LIMIT_MASK,
         "cycle_active": bool(low_raw & FLAG_BIT),
+        "low_shadow_raw": low_shadow,
+        "low_shadow_valid": bool(low_shadow & FLAG_BIT),
+        "saved_low": low_shadow & LIMIT_MASK,
+        "save_magic": save_magic,
     }
 
 
 def _describe_mode(state):
+    if state["low"] == 0 and state["high"] == 0:
+        return "unrestricted; charging is allowed to 100%"
     if state["low"] == 0:
         return "stock upper-only behavior (lower hysteresis disabled)"
     if not (1 <= state["low"] <= 95 and 1 <= state["high"] <= 99 and state["low"] < state["high"]):
-        return "invalid lower/upper pair; firmware should fall back to stock upper-only behavior"
+        return "invalid lower/upper pair; v2.2 treats it as disabled/unrestricted"
     if state["rsoc"] <= state["low"]:
         return "lower reached: a charge cycle should be active"
     if state["rsoc"] >= state["high"]:
@@ -224,6 +237,26 @@ def _print_state(state):
         f"XRAM[0x{ADDR_BATTERY_CHARGE_LIMIT_DOWN:04X}] lower = 0x{state['low_raw']:02x} "
         f"(limit={state['low']}%, cycle-active={'yes' if state['cycle_active'] else 'no'})"
     )
+    if state["low_shadow_valid"]:
+        shadow_text = f"valid, saved lower={state['saved_low']}%"
+    else:
+        shadow_text = "no v2.2 record"
+    print(
+        f"XRAM[0x{ADDR_BATTERY_CHARGE_LIMIT_LOW_SHADOW:04X}] saved = "
+        f"0x{state['low_shadow_raw']:02x} ({shadow_text})"
+    )
+    if state["save_magic"] == (0xA5, 0x78):
+        save_text = "commit requested/pending"
+    elif state["save_magic"] == (0x55, 0xAA):
+        save_text = "stock block marker/commit consumed"
+    else:
+        save_text = "idle or platform-owned state"
+    print(
+        f"Save handshake:        0x{state['save_magic'][0]:02x} "
+        f"0x{state['save_magic'][1]:02x} ({save_text})"
+    )
+    if state["low_shadow_valid"] and state["saved_low"] != state["low"]:
+        print("Persistence:           runtime lower has not reached persistent storage yet")
     print(f"Mode:                 {_describe_mode(state)}")
     warning = _convergence_warning(state)
     if warning:
@@ -272,21 +305,9 @@ def _choose_cycle_active(old, low, high):
 
 
 def _validate_set_args(args):
-    if args.disable:
-        if args.down is not None:
-            raise ValueError("--disable cannot be combined with --down")
-        return "disable"
-
-    if args.up is None:
-        raise ValueError("set requires --up unless --disable is given")
-
     if args.down is None:
         return "upper"
 
-    if not 2 <= args.up <= 99:
-        raise ValueError(
-            "upper threshold must be between 2 and 99 when --down is used"
-        )
     if args.down >= args.up:
         raise ValueError("lower threshold must be less than upper threshold")
     return "window"
@@ -306,11 +327,8 @@ def cmd_set(args):
     _ensure_ap_exist()
     old = _read_state()
 
-    if mode == "disable":
-        low_raw = 0x00
-        high_raw = 0x00
-    elif mode == "upper":
-        stop = bool(args.up and old["rsoc"] >= args.up)
+    if mode == "upper":
+        stop = old["rsoc"] >= args.up
         low_raw = 0x00
         high_raw = args.up | (FLAG_BIT if stop else 0x00)
     else:
@@ -324,21 +342,16 @@ def cmd_set(args):
     print(f"XRAM[0x{ADDR_BATTERY_CHARGE_LIMIT_DOWN:04X}]: 0x{old['low_raw']:02x} -> 0x{new['low_raw']:02x}")
     print(f"XRAM[0x{ADDR_BATTERY_CHARGE_LIMIT_UP:04X}]: 0x{old['high_raw']:02x} -> 0x{new['high_raw']:02x}")
 
-    if mode == "disable":
-        print("FlexiCharge disabled; restored unrestricted stock upper setting")
-    elif mode == "upper":
+    if mode == "upper":
         print(
             f"Configured upper threshold: {_limit_text(args.up)} "
             "(lower hysteresis disabled)"
         )
-        if args.up == 0:
-            print("Stop-bit initialization: cleared (unrestricted upper setting)")
-        else:
-            print(
-                "Stop-bit initialization: "
-                f"{'set' if new['stopped'] else 'clear'} "
-                f"(current RSOC {old['rsoc']}% vs upper {args.up}%)"
-            )
+        print(
+            "Stop-bit initialization: "
+            f"{'set' if new['stopped'] else 'clear'} "
+            f"(current RSOC {old['rsoc']}% vs upper {args.up}%)"
+        )
         print(
             "Note: upper-threshold support may need separate enablement first "
             "(w568 script, or supported BIOS/firmware + BIOS charge-limit option)."
@@ -357,6 +370,27 @@ def cmd_set(args):
             "changing charging behavior."
         )
 
+    _print_state(new)
+
+
+def cmd_charge_full(args):
+    _ensure_ap_exist()
+    old = _read_state()
+    _write_limits(0x00, 0x00)
+    new = _read_state()
+    if new["low"] or new["high"]:
+        raise RuntimeError("EC did not clear the configured charge thresholds")
+
+    print(
+        f"XRAM[0x{ADDR_BATTERY_CHARGE_LIMIT_DOWN:04X}]: "
+        f"0x{old['low_raw']:02x} -> 0x{new['low_raw']:02x}"
+    )
+    print(
+        f"XRAM[0x{ADDR_BATTERY_CHARGE_LIMIT_UP:04X}]: "
+        f"0x{old['high_raw']:02x} -> 0x{new['high_raw']:02x}"
+    )
+    print("Charge limits cleared; charging is allowed up to 100%.")
+    print("Actual charging still depends on AC power and battery safety conditions.")
     _print_state(new)
 
 
@@ -383,17 +417,12 @@ def register(subparsers):
         epilog=SET_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    mode_group = set_parser.add_mutually_exclusive_group(required=True)
-    mode_group.add_argument(
+    set_parser.add_argument(
         "-u",
         "--up",
         type=upper_type,
-        help="Upper threshold (0-100). Use alone for upper-only mode.",
-    )
-    mode_group.add_argument(
-        "--disable",
-        action="store_true",
-        help="Disable lower hysteresis and restore unrestricted charging.",
+        required=True,
+        help="Upper threshold (1-99). Use alone for upper-only mode.",
     )
     set_parser.add_argument(
         "-d",
@@ -402,3 +431,8 @@ def register(subparsers):
         help="Lower threshold (1-95). Requires -u/--up and compatible EC firmware.",
     )
     set_parser.set_defaults(func=cmd_set)
+
+    sub.add_parser(
+        "charge-full",
+        help="Clear charge limits and allow charging to 100%%",
+    ).set_defaults(func=cmd_charge_full)
