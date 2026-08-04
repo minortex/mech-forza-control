@@ -349,41 +349,37 @@ def cmd_table(args):
     )
     print(f"Table authority      : {authority}")
     print(f"Gates A/C/M          : {_format_gate_bits(state).replace(' ', '  ')}")
+    print(f"Live temperature     : CPU {cpu_t}°C")
+    print(f"Live Main            : {main_rpm} RPM ({_format_duty(main_duty_now)})")
     print(
-        f"Live                 : CPU {cpu_t}°C | "
-        f"Main {main_rpm} RPM ({_format_duty(main_duty_now)}) | "
-        f"Second {second_rpm} RPM ({_format_duty(second_duty_now)})"
+        f"Live Second          : {second_rpm} RPM "
+        f"({_format_duty(second_duty_now)})"
     )
     print(f"Current index        : Main={main_index}, Second={second_index}")
     linked_index = None
     if state["table_active"] and state["independent_active"]:
         print("Lookup mode          : independent indexes")
-        print("Current marker       : M=Main, S=Second, M/S=both")
     elif state["table_active"]:
         linked_index = main_index
         print(
             "Lookup mode          : linked; Main/CPU index drives both fans"
         )
-        print("Current marker       : CUR=Main/CPU curve point")
     else:
         print("Lookup mode          : EC firmware/ROM fallback")
-        print("Current marker       : none (RAM table is not authoritative)")
     if rom_load_mode is not None:
         print(
             f"ROM table trigger    : pending {ROM_TABLE_MODES[rom_load_mode]} load "
             f"(FD C9 {rom_load_mode:02X})"
         )
         print("Note                 : Second duty[13..15] are trigger bytes, not duty")
-    print(
-        "Point semantics      : Up: k-1 -> k when T > value; "
-        "Down: k+1 -> k when T < value"
+    group_header = (
+        f"{'':11} | {'Main':^23} | {'Second':^23}"
     )
-    print("Threshold equality   : hold the current level")
-
     header = (
-        f"{'Lvl':>3} {'Current':>7} | {'Main Up >°C':>11} {'Down <°C':>8} "
-        f"{'Duty':>7} | {'Second Up >°C':>13} {'Down <°C':>8} {'Duty':>7}"
+        f"{'Lvl':>3} {'Current':>7} | {'Up >°C':>6} {'Down <°C':>8} "
+        f"{'Duty':>7} | {'Up >°C':>6} {'Down <°C':>8} {'Duty':>7}"
     )
+    print(group_header)
     print(header)
     print("-" * len(header))
     for i in range(16):
@@ -409,10 +405,10 @@ def cmd_table(args):
             second_duty = _format_table_duty(second["duty"][i])
         print(
             f"{i:>3} {marker:>7} | "
-            f"{_format_temperature(main['up'][i]):>11} "
+            f"{_format_temperature(main['up'][i]):>6} "
             f"{_format_temperature(main['down'][i]):>8} "
             f"{main_duty:>7} | "
-            f"{_format_temperature(second['up'][i]):>13} "
+            f"{_format_temperature(second['up'][i]):>6} "
             f"{_format_temperature(second['down'][i]):>8} "
             f"{second_duty:>7}"
         )

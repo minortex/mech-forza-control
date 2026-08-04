@@ -493,6 +493,7 @@ def test_fan_table_shows_state_thresholds_and_runtime(capsys):
 
     output = capsys.readouterr().out
     lines = output.splitlines()
+    group_header = next(line for line in lines if "Main" in line and "Second" in line)
     header = next(line for line in lines if line.startswith("Lvl "))
     first_row = next(line for line in lines if line.startswith("  0"))
     rows = [
@@ -503,23 +504,20 @@ def test_fan_table_shows_state_thresholds_and_runtime(capsys):
     assert rows[0] == ["0", "|", "--", "37", "20.0%", "|", "--", "37", "20.0%"]
     assert rows[5][1] == "CUR"
     assert rows[-1] == ["15", "|", "56", "--", "35.0%", "|", "56", "--", "35.0%"]
-    assert header.index("Main Up >°C") + len("Main Up >°C") == first_row.index("--") + 2
+    assert group_header.index("Main") < group_header.index("Second")
+    assert header.index("Up >°C") + len("Up >°C") == first_row.index("--") + 2
     assert header.index("Down <°C") + len("Down <°C") == first_row.index("37") + 2
-    assert "Main Up >°C" in output
-    assert (
-        "Up: k-1 -> k when T > value; Down: k+1 -> k when T < value"
-        in output
-    )
-    assert "Threshold equality   : hold the current level" in output
+    assert all(len(line) <= 80 for line in lines)
+    assert "Point semantics" not in output
+    assert "Threshold equality" not in output
     assert "Table format" not in output
     assert "ROM table trigger" not in output
     assert "Gates A/C/M          : A=1  C=1  M=1" in output
     assert "linked; Main/CPU index drives both fans" in output
-    assert "CUR=Main/CPU curve point" in output
-    assert (
-        "CPU 73°C | Main 3200 RPM (44.0%) | Second 2560 RPM (38.0%)"
-        in output
-    )
+    assert "Current marker" not in output
+    assert "Live temperature     : CPU 73°C" in output
+    assert "Live Main            : 3200 RPM (44.0%)" in output
+    assert "Live Second          : 2560 RPM (38.0%)" in output
 
     backend = NativeBatchBackend()
     io._set_backend_for_testing(backend)
