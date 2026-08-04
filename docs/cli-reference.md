@@ -108,7 +108,17 @@ uv run mfc fan switch-speed STEPS
 uv run mfc fan default    # 恢复 config.py 中的出厂风扇曲线
 ```
 
-写入 UpT + DownT + Duty 到 XRAM[3840..3935]。
+从 `fan-table.toml` 读取 `[main].levels` 和 `[second].levels`，写入 UpT +
+DownT + Duty 到 XRAM[3840..3935]。每组必须包含 16 个 GCU 曲线点：
+第 0 点省略 `up`，第 15 点省略 `down`。相邻点必须满足前一点的
+`down` 小于后一点的 `up` 以形成滞回；UpT/DownT 必须严格递增，
+Duty 不得递减。写入 EC 时按官方 RamFan1p5 格式偏移阈值。
+旧版 EC-slot 端点格式仍可读取，并会在内存中转换为 GCU 曲线点。
+
+`mfc fan table` 也按 GCU 目标挡位展示：第 `k` 行的 Up 表示温度严格大于
+该值时从 `k-1` 升入 `k`，Down 表示温度严格小于该值时从 `k+1` 降入
+`k`；温度等于阈值时保持当前挡位。值为 `255` 的 Duty 是未使用槽位的
+哨兵，显示为 `unused`，不是百分比。
 
 ---
 

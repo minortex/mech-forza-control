@@ -63,7 +63,24 @@ You can try manually patch official firmware (provided strictly as-is, with no w
 
 ## Config
 
-The location of config is in `/etc/mech-forza-control/fan-table.toml`, you can manually change the fan curve.
+The fan curve is loaded from `/etc/mech-forza-control/fan-table.toml`. Each fan
+contains exactly 16 GCU curve points:
+
+```toml
+[main]
+levels = [
+  { down = 35, duty = 20 },
+  { up = 40, down = 40, duty = 30 },
+  # ...
+  { up = 95, duty = 100 },
+]
+```
+
+Level 0 has no `up` threshold and level 15 has no `down` threshold. Each point's
+`down` must be less than the next point's `up` to provide hysteresis; thresholds
+must increase and duty must not decrease. The same structure is required under
+`[second]`. Profiles using the previous EC-slot endpoint layout remain readable
+for compatibility.
 
 ## Thanks
 

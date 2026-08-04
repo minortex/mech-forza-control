@@ -70,6 +70,10 @@ def _format_duty(value):
     return f"{value / 2:.1f}%"
 
 
+def _format_table_duty(value):
+    return "unused" if value == 0xFF else _format_duty(value)
+
+
 _CONTROL_ADDRS = (
     ADDR_AP_OEM,
     ADDR_AP_OEM10,
@@ -311,21 +315,29 @@ def cmd_table(args):
 
     table_addrs = tuple(range(ADDR_CPU_FAN_UPT_BASE, ADDR_GPU_FAN_DUTY_BASE + 16))
     values = _read_registers(
-        _CONTROL_ADDRS
+        _RUNTIME_ADDRS
+        + _CONTROL_ADDRS
         + (ADDR_MAIN_FAN_INDEX, ADDR_SECOND_FAN_INDEX)
         + table_addrs
+    )
+    cpu_t, main_rpm, second_rpm, main_duty_now, second_duty_now, _ = (
+        _decode_runtime(values)
     )
     state = _decode_control_state(values)
     main_index = values[ADDR_MAIN_FAN_INDEX]
     second_index = values[ADDR_SECOND_FAN_INDEX]
     main = {
-        "up": [values[ADDR_CPU_FAN_UPT_BASE + i] for i in range(16)],
-        "down": [values[ADDR_CPU_FAN_DNT_BASE + i] for i in range(16)],
+        "up": [0xFF]
+        + [values[ADDR_CPU_FAN_UPT_BASE + i] for i in range(15)],
+        "down": [values[ADDR_CPU_FAN_DNT_BASE + i] for i in range(1, 16)]
+        + [0xFF],
         "duty": [values[ADDR_CPU_FAN_DUTY_BASE + i] for i in range(16)],
     }
     second = {
-        "up": [values[ADDR_GPU_FAN_UPT_BASE + i] for i in range(16)],
-        "down": [values[ADDR_GPU_FAN_DNT_BASE + i] for i in range(16)],
+        "up": [0xFF]
+        + [values[ADDR_GPU_FAN_UPT_BASE + i] for i in range(15)],
+        "down": [values[ADDR_GPU_FAN_DNT_BASE + i] for i in range(1, 16)]
+        + [0xFF],
         "duty": [values[ADDR_GPU_FAN_DUTY_BASE + i] for i in range(16)],
     }
     rom_load_mode = _rom_table_load_mode(second["duty"])
@@ -336,35 +348,41 @@ def cmd_table(args):
         else "inactive snapshot (EC firmware/ROM fallback)"
     )
     print(f"Table authority      : {authority}")
-    _print_gate_details(state)
+    print(f"Gates A/C/M          : {_format_gate_bits(state).replace(' ', '  ')}")
+    print(
+        f"Live                 : CPU {cpu_t}°C | "
+        f"Main {main_rpm} RPM ({_format_duty(main_duty_now)}) | "
+        f"Second {second_rpm} RPM ({_format_duty(second_duty_now)})"
+    )
     print(f"Current index        : Main={main_index}, Second={second_index}")
     linked_index = None
     if state["table_active"] and state["independent_active"]:
         print("Lookup mode          : independent indexes")
         print("Current marker       : M=Main, S=Second, M/S=both")
     elif state["table_active"]:
-        linked_index = max(main_index, second_index)
+        linked_index = main_index
         print(
-            "Lookup mode          : linked; shared candidate index "
-            f"max({main_index}, {second_index}) = {linked_index}"
+            "Lookup mode          : linked; Main/CPU index drives both fans"
         )
-        print("Current marker       : CUR=linked shared candidate index")
+        print("Current marker       : CUR=Main/CPU curve point")
     else:
         print("Lookup mode          : EC firmware/ROM fallback")
         print("Current marker       : none (RAM table is not authoritative)")
-    print("Table format         : temperatures in °C, duty shown as raw / 2")
-    if rom_load_mode is None:
-        print("ROM table trigger    : idle (FD C9 mode sentinel absent)")
-    else:
+    if rom_load_mode is not None:
         print(
             f"ROM table trigger    : pending {ROM_TABLE_MODES[rom_load_mode]} load "
             f"(FD C9 {rom_load_mode:02X})"
         )
         print("Note                 : Second duty[13..15] are trigger bytes, not duty")
+    print(
+        "Point semantics      : Up: k-1 -> k when T > value; "
+        "Down: k+1 -> k when T < value"
+    )
+    print("Threshold equality   : hold the current level")
 
     header = (
-        f"{'Idx':>3} {'Current':>7} | {'Main UpT':>8} {'DownT':>5} {'Duty':>7} | "
-        f"{'Second UpT':>10} {'DownT':>5} {'Duty':>7}"
+        f"{'Lvl':>3} {'Current':>7} | {'Main Up >°C':>11} {'Down <°C':>8} "
+        f"{'Duty':>7} | {'Second Up >°C':>13} {'Down <°C':>8} {'Duty':>7}"
     )
     print(header)
     print("-" * len(header))
@@ -384,18 +402,18 @@ def cmd_table(args):
             marker = "CUR"
         else:
             marker = ""
-        main_duty = _format_duty(main["duty"][i])
+        main_duty = _format_table_duty(main["duty"][i])
         if rom_load_mode is not None and i >= 13:
             second_duty = f"0x{second['duty'][i]:02X}*"
         else:
-            second_duty = _format_duty(second["duty"][i])
+            second_duty = _format_table_duty(second["duty"][i])
         print(
             f"{i:>3} {marker:>7} | "
-            f"{_format_temperature(main['up'][i]):>8} "
-            f"{_format_temperature(main['down'][i]):>5} "
+            f"{_format_temperature(main['up'][i]):>11} "
+            f"{_format_temperature(main['down'][i]):>8} "
             f"{main_duty:>7} | "
-            f"{_format_temperature(second['up'][i]):>10} "
-            f"{_format_temperature(second['down'][i]):>5} "
+            f"{_format_temperature(second['up'][i]):>13} "
+            f"{_format_temperature(second['down'][i]):>8} "
             f"{second_duty:>7}"
         )
 
@@ -623,12 +641,10 @@ def cmd_default(args):
 
     def _append_restore(base_upt, base_dnt, base_duty, curve: FanCurve):
         for i in range(16):
-            up = curve.up[i + 1] if i < 15 else 255
+            up = curve.up[i + 1] if i < 15 else 0xFF
+            down = 0 if i == 0 else curve.down[i - 1]
             operations.append(EcOperation(EC_OP_WRITE, base_upt + i, up))
-            if i < 15:
-                operations.append(
-                    EcOperation(EC_OP_WRITE, base_dnt + i + 1, curve.down[i])
-                )
+            operations.append(EcOperation(EC_OP_WRITE, base_dnt + i, down))
             operations.append(
                 EcOperation(EC_OP_WRITE, base_duty + i, curve.duty[i] * 2)
             )

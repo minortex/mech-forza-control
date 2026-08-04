@@ -1,17 +1,47 @@
-# Default RamFan1p5 profile.
+# Default RamFan1p5 profile with proper hysteresis.
 #
-# Each fan contains 16 logical levels. Temperatures are degrees Celsius and
-# duty values are percentages. The EC stores duty as percentage * 2.
-# The write layout follows the firmware's RamFan1p5 table transformation:
-# logical UpT entries are shifted into the EC UpT array, the final EC UpT is
-# 0xFF, and logical DownT entries are shifted by one EC slot.
+# Each entry is one GCU curve point. Temperatures are degrees Celsius and duty
+# is a percentage. Level 0 has no up threshold; level 15 has no down threshold.
+# Up threshold = fan turns ON / speeds up when rising temp reaches this value.
+# Down threshold = fan slows down / turns OFF when falling temp reaches this value.
+# Difference (up - down) provides hysteresis to prevent fan oscillation.
 
 [main]
-up = [40, 45, 50, 55, 60, 65, 68, 72, 76, 80, 83, 86, 89, 92, 95, 255]
-down = [35, 40, 45, 50, 55, 60, 63, 67, 71, 75, 78, 81, 84, 87, 90, 95]
-duty = [20, 30, 35, 44, 48, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+levels = [
+  { down = 35, duty = 15 },
+  { up = 40, down = 38, duty = 20 },
+  { up = 45, down = 43, duty = 25 },
+  { up = 50, down = 48, duty = 30 },
+  { up = 55, down = 53, duty = 35 },
+  { up = 60, down = 58, duty = 40 },
+  { up = 65, down = 62, duty = 50 },
+  { up = 70, down = 67, duty = 60 },
+  { up = 75, down = 72, duty = 70 },
+  { up = 80, down = 77, duty = 80 },
+  { up = 83, down = 80, duty = 85 },
+  { up = 86, down = 83, duty = 90 },
+  { up = 89, down = 86, duty = 93 },
+  { up = 92, down = 89, duty = 96 },
+  { up = 95, down = 92, duty = 98 },
+  { up = 98, duty = 100 },
+]
 
 [second]
-up = [40, 45, 50, 55, 60, 65, 68, 72, 76, 80, 83, 86, 89, 92, 95, 255]
-down = [35, 40, 45, 50, 55, 60, 63, 67, 71, 75, 78, 81, 84, 87, 90, 95]
-duty = [10, 20, 25, 30, 35, 40, 45, 50, 65, 70, 75, 80, 85, 90, 95, 100]
+levels = [
+  { down = 35, duty = 10 },
+  { up = 40, down = 38, duty = 20 },
+  { up = 45, down = 43, duty = 25 },
+  { up = 50, down = 48, duty = 30 },
+  { up = 55, down = 53, duty = 35 },
+  { up = 60, down = 58, duty = 40 },
+  { up = 65, down = 62, duty = 45 },
+  { up = 68, down = 65, duty = 50 },
+  { up = 72, down = 69, duty = 65 },
+  { up = 76, down = 73, duty = 70 },
+  { up = 80, down = 77, duty = 75 },
+  { up = 83, down = 80, duty = 80 },
+  { up = 86, down = 83, duty = 85 },
+  { up = 89, down = 86, duty = 90 },
+  { up = 92, down = 89, duty = 95 },
+  { up = 95, duty = 100 },
+]

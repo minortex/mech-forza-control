@@ -8,15 +8,28 @@ from src.registers import (
     ADDR_AP_CTL,
     ADDR_AP_OEM,
     ADDR_AP_OEM10,
+    ADDR_CPU_FAN_DNT_BASE,
     ADDR_CPU_FAN_DUTY_BASE,
+    ADDR_CPU_FAN_UPT_BASE,
+    ADDR_CPU_TEMP,
     ADDR_FANCTL_RESP,
     ADDR_FAN_SWITCH_SPEED,
+    ADDR_GPU_FAN_DNT_BASE,
     ADDR_GPU_FAN_DUTY_BASE,
+    ADDR_GPU_FAN_UPT_BASE,
+    ADDR_MAIN_FAN_DUTY,
+    ADDR_MAIN_FAN_INDEX,
+    ADDR_MAIN_FAN_RPM_HI,
+    ADDR_MAIN_FAN_RPM_LO,
     ADDR_MAFAN_CTL,
     ADDR_PL1,
     ADDR_PL2,
     ADDR_PL4,
     ADDR_TCC,
+    ADDR_SECOND_FAN_DUTY,
+    ADDR_SECOND_FAN_INDEX,
+    ADDR_SECOND_FAN_RPM_HI,
+    ADDR_SECOND_FAN_RPM_LO,
     EC_MMIO_MAX,
     FAN_BOOST_BIT,
 )
@@ -449,15 +462,90 @@ def test_fan_read_is_one_atomic_snapshot(capsys):
     assert all(op.type == EC_OP_READ for op in backend.transactions[0])
 
 
-def test_fan_table_is_one_103_read_atomic_snapshot(capsys):
+def test_fan_table_shows_state_thresholds_and_runtime(capsys):
+    initial = {
+        ADDR_AP_OEM: 0x01,
+        ADDR_AP_OEM10: 0x40,
+        ADDR_AP_CTL: 0x04,
+        ADDR_CPU_TEMP: 73,
+        ADDR_MAIN_FAN_INDEX: 5,
+        ADDR_SECOND_FAN_INDEX: 0,
+        ADDR_MAIN_FAN_RPM_HI: 12,
+        ADDR_MAIN_FAN_RPM_LO: 128,
+        ADDR_SECOND_FAN_RPM_HI: 10,
+        ADDR_SECOND_FAN_RPM_LO: 0,
+        ADDR_MAIN_FAN_DUTY: 88,
+        ADDR_SECOND_FAN_DUTY: 76,
+    }
+    for base in (ADDR_CPU_FAN_UPT_BASE, ADDR_GPU_FAN_UPT_BASE):
+        initial.update({base + i: 42 + i for i in range(15)})
+        initial[base + 15] = 0xFF
+    for base in (ADDR_CPU_FAN_DNT_BASE, ADDR_GPU_FAN_DNT_BASE):
+        initial[base] = 0
+        initial.update({base + i: 36 + i for i in range(1, 16)})
+    for base in (ADDR_CPU_FAN_DUTY_BASE, ADDR_GPU_FAN_DUTY_BASE):
+        initial.update({base + i: 40 + i * 2 for i in range(16)})
+
+    backend = NativeBatchBackend(initial)
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_table(Namespace(reset=False, file=None))
+
+    output = capsys.readouterr().out
+    lines = output.splitlines()
+    header = next(line for line in lines if line.startswith("Lvl "))
+    first_row = next(line for line in lines if line.startswith("  0"))
+    rows = [
+        line.split()
+        for line in lines
+        if line[:3].strip().isdigit()
+    ]
+    assert rows[0] == ["0", "|", "--", "37", "20.0%", "|", "--", "37", "20.0%"]
+    assert rows[5][1] == "CUR"
+    assert rows[-1] == ["15", "|", "56", "--", "35.0%", "|", "56", "--", "35.0%"]
+    assert header.index("Main Up >°C") + len("Main Up >°C") == first_row.index("--") + 2
+    assert header.index("Down <°C") + len("Down <°C") == first_row.index("37") + 2
+    assert "Main Up >°C" in output
+    assert (
+        "Up: k-1 -> k when T > value; Down: k+1 -> k when T < value"
+        in output
+    )
+    assert "Threshold equality   : hold the current level" in output
+    assert "Table format" not in output
+    assert "ROM table trigger" not in output
+    assert "Gates A/C/M          : A=1  C=1  M=1" in output
+    assert "linked; Main/CPU index drives both fans" in output
+    assert "CUR=Main/CPU curve point" in output
+    assert (
+        "CPU 73°C | Main 3200 RPM (44.0%) | Second 2560 RPM (38.0%)"
+        in output
+    )
+
     backend = NativeBatchBackend()
     io._set_backend_for_testing(backend)
 
     fan.cmd_table(Namespace(reset=False, file=None))
 
     assert len(backend.transactions) == 1
-    assert len(backend.transactions[0]) == 103
+    assert len(backend.transactions[0]) == 111
     assert all(op.type == EC_OP_READ for op in backend.transactions[0])
+
+
+def test_fan_table_shows_unused_duty_sentinel(capsys):
+    initial = {
+        ADDR_CPU_FAN_DUTY_BASE + 15: 0xFF,
+        ADDR_GPU_FAN_DUTY_BASE + 15: 0xFF,
+    }
+    backend = NativeBatchBackend(initial)
+    io._set_backend_for_testing(backend)
+
+    fan.cmd_table(Namespace(reset=False, file=None))
+
+    last_row = next(
+        line for line in capsys.readouterr().out.splitlines() if line.startswith(" 15")
+    )
+    assert last_row.count("unused") == 2
+    assert "127.5%" not in last_row
 
 
 def test_mode_switch_is_one_atomic_update_and_read(capsys):
@@ -498,7 +586,11 @@ def test_fan_table_reset_is_one_atomic_transaction(monkeypatch):
 
     fan.cmd_table(Namespace(reset=True, file=None))
 
+    assert backend.values[ADDR_CPU_FAN_UPT_BASE] == 1
+    assert backend.values[ADDR_CPU_FAN_UPT_BASE + 15] == 0xFF
+    assert backend.values[ADDR_CPU_FAN_DNT_BASE] == 0
+    assert backend.values[ADDR_CPU_FAN_DNT_BASE + 15] == 14
     assert len(backend.transactions) == 1
-    assert len(backend.transactions[0]) == 111
+    assert len(backend.transactions[0]) == 113
     assert backend.values[ADDR_FANCTL_RESP] & 0x80
     assert backend.values[ADDR_AP_CTL] & 0x04

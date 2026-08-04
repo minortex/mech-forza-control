@@ -48,44 +48,134 @@ def _read_toml(stream: BinaryIO, source: str) -> dict[str, Any]:
     return data
 
 
-def _validate_values(
-    section: dict[str, Any],
-    section_name: str,
-    field: str,
-    source: str,
-    minimum: int,
-    maximum: int,
-) -> tuple[int, ...]:
-    values = section.get(field)
-    location = f"{source}: [{section_name}].{field}"
-    if not isinstance(values, list):
-        raise ValueError(f"invalid fan profile {location} must be an array")
-    if len(values) != 16:
+def _level_value(
+    level: dict[str, Any], location: str, field: str, minimum: int, maximum: int
+) -> int:
+    value = level.get(field)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"invalid fan profile {location}.{field} must be an integer")
+    if not minimum <= value <= maximum:
         raise ValueError(
-            f"invalid fan profile {location} must contain exactly 16 values, "
-            f"got {len(values)}"
+            f"invalid fan profile {location}.{field} must be "
+            f"{minimum}-{maximum}, got {value}"
         )
-    for index, value in enumerate(values):
-        if isinstance(value, bool) or not isinstance(value, int):
+    return value
+
+
+def _require_strictly_increasing(
+    values: tuple[int, ...], locations: tuple[str, ...], field: str
+) -> None:
+    for index in range(1, len(values)):
+        if values[index] <= values[index - 1]:
             raise ValueError(
-                f"invalid fan profile {location}[{index}] must be an integer"
+                f"invalid fan profile {locations[index]}.{field} must be greater "
+                f"than the previous {field} ({values[index - 1]}), "
+                f"got {values[index]}"
             )
-        if not minimum <= value <= maximum:
+
+
+def _convert_ec_levels(levels: list[Any], location: str) -> list[dict[str, Any]]:
+    """Convert the previous EC-slot profile layout to GCU curve points."""
+    for index, level in enumerate(levels):
+        item_location = f"{location}[{index}]"
+        if not isinstance(level, dict):
+            raise ValueError(f"invalid fan profile {item_location} must be a table")
+        expected = {"duty"}
+        if index < 15:
+            expected.add("up")
+        if index > 0:
+            expected.add("down")
+        if set(level) != expected:
+            fields = ", ".join(sorted(expected))
             raise ValueError(
-                f"invalid fan profile {location}[{index}] must be "
-                f"{minimum}-{maximum}, got {value}"
+                f"invalid fan profile {item_location} must contain exactly: {fields}"
             )
-    return tuple(values)
+
+    converted = []
+    for index, level in enumerate(levels):
+        point = {"duty": level["duty"]}
+        if index > 0:
+            point["up"] = levels[index - 1]["up"]
+        if index < 15:
+            point["down"] = levels[index + 1]["down"]
+        converted.append(point)
+    return converted
 
 
 def _validate_curve(data: dict[str, Any], name: str, source: str) -> FanCurve:
     section = data.get(name)
     if not isinstance(section, dict):
         raise ValueError(f"invalid fan profile {source}: missing [{name}] table")
+    if set(section) != {"levels"}:
+        raise ValueError(
+            f"invalid fan profile {source}: [{name}] must contain only levels"
+        )
+    levels = section["levels"]
+    location = f"{source}: [{name}].levels"
+    if not isinstance(levels, list):
+        raise ValueError(f"invalid fan profile {location} must be an array")
+    if len(levels) != 16:
+        raise ValueError(
+            f"invalid fan profile {location} must contain exactly 16 levels, "
+            f"got {len(levels)}"
+        )
+    if (
+        isinstance(levels[0], dict)
+        and set(levels[0]) == {"up", "duty"}
+        and isinstance(levels[-1], dict)
+        and set(levels[-1]) == {"down", "duty"}
+    ):
+        levels = _convert_ec_levels(levels, location)
+
+    up: list[int] = []
+    down: list[int] = []
+    duty: list[int] = []
+    up_locations: list[str] = []
+    down_locations: list[str] = []
+    for index, level in enumerate(levels):
+        item_location = f"{location}[{index}]"
+        if not isinstance(level, dict):
+            raise ValueError(f"invalid fan profile {item_location} must be a table")
+        expected = {"duty"}
+        if index > 0:
+            expected.add("up")
+        if index < 15:
+            expected.add("down")
+        if set(level) != expected:
+            fields = ", ".join(sorted(expected))
+            raise ValueError(
+                f"invalid fan profile {item_location} must contain exactly: {fields}"
+            )
+
+        duty.append(_level_value(level, item_location, "duty", 0, 100))
+        if index > 0:
+            up.append(_level_value(level, item_location, "up", 0, 254))
+            up_locations.append(item_location)
+        if index < 15:
+            down.append(_level_value(level, item_location, "down", 0, 254))
+            down_locations.append(item_location)
+    up_values = tuple(up)
+    down_values = tuple(down)
+    duty_values = tuple(duty)
+    _require_strictly_increasing(up_values, tuple(up_locations), "up")
+    _require_strictly_increasing(down_values, tuple(down_locations), "down")
+    for index in range(15):
+        if down_values[index] >= up_values[index]:
+            raise ValueError(
+                f"invalid fan profile {down_locations[index]}.down must be less "
+                f"than {up_locations[index]}.up to provide hysteresis"
+            )
+    for index in range(1, 16):
+        if duty_values[index] < duty_values[index - 1]:
+            raise ValueError(
+                f"invalid fan profile {location}[{index}].duty must not be less "
+                f"than the previous duty ({duty_values[index - 1]}), "
+                f"got {duty_values[index]}"
+            )
     return FanCurve(
-        up=_validate_values(section, name, "up", source, 0, 255),
-        down=_validate_values(section, name, "down", source, 0, 255),
-        duty=_validate_values(section, name, "duty", source, 0, 100),
+        up=(0,) + up_values,
+        down=down_values + (255,),
+        duty=duty_values,
     )
 
 
