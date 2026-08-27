@@ -1,22 +1,22 @@
-# Maintainer: texsd <texsd@users.noreply.github.com>
-
+# Maintainer: minortex <texsd dot tt29 at outlook dot com>
 pkgname=mech-forza-control-git
-pkgver=0.1.0.r0.gc8646e3
-pkgrel=5
+pkgver=0.2.0.r0.gf3ec97d
+pkgrel=1
 pkgdesc="Mechrevo notebook EC direct control CLI (MFC) — power mode, fan curve, keyboard backlight"
 arch=('any')
 url="https://github.com/minortex/mech-forza-control"
 license=('GPL-3.0-only')
 depends=('python>=3.11')
 optdepends=('mech-forza-kmod-dkms-git: GX4HRXL kernel EC bridge (recommended on Linux)')
-makedepends=('python-build' 'python-installer' 'python-hatchling' 'git')
+makedepends=('python-build' 'python-installer' 'python-hatchling' 'python-wheel' 'git')
 source=("$pkgname::git+$url.git")
 sha256sums=('SKIP')
 backup=('etc/mech-forza-control/fan-table.toml')
 
 pkgver() {
   cd "$pkgname"
-  git describe --long --tags | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+  git describe --long --tags --abbrev=7 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
+    printf "r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
 }
 
 build() {
@@ -26,7 +26,7 @@ build() {
 
 package() {
   cd "$srcdir/$pkgname"
-  python -m installer --destdir="$pkgdir" dist/mech_forza_control-*.whl
+  python -m installer --destdir="$pkgdir" --compile-bytecode 1 dist/mech_forza_control-*.whl
   install -Dm644 src/data/fan-table.toml "$pkgdir/etc/mech-forza-control/fan-table.toml"
   install -Dm644 systemd/mech-forza-fan.service "$pkgdir/usr/lib/systemd/system/mech-forza-fan.service"
 }
