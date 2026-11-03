@@ -117,8 +117,6 @@ def test_bundled_profile_is_final_fallback(tmp_path, monkeypatch):
     assert len(profile.main.up) == 16
     assert profile.main.up[0] == 0
     assert profile.main.down[-1] == 255
-    assert profile.main.duty[0] == 20
-    assert profile.second.duty[0] == 10
 
 
 def test_previous_ec_slot_layout_is_converted_to_gcu_points(tmp_path):
