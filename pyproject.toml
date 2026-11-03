@@ -1,6 +1,6 @@
 [project]
 name = "mech-forza-control"
-version = "0.1.0"
+version = "0.2.0"
 description = "Mechrevo notebook EC direct control"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,7 +12,6 @@ keywords = ["ec", "mechrevo", "fan-control", "keyboard-backlight"]
 
 [project.scripts]
 mfc = "src.__main__:main"
-mfc-kde-osd = "src.kde_osd:main"
 
 [dependency-groups]
 dev = [
