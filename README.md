@@ -50,7 +50,7 @@ Since the EC does not enforce cryptographic signature verification, you can bypa
 
 > [!WARNING]
 > FLASHING EC FIRMWARE WITHOUT A EXTERNAL SPI PROGRAMMER CARRIES RISK OF BRICKING YOUR DEVICE!
-> WHILE FLASHING VIA `ifux64.efi` IS POSSIBLE, DO SO AT YOUR OWN RISK!
+> WHILE FLASHING IT IS POSSIBLE, DO SO AT YOUR OWN RISK!
 
 - Unlocked Charge Voltage: Removes the 16.4V ceiling, allowing the battery to reach its true full capacity.
 - Hysteresis Charging Window: Supports configurable lower and upper thresholds (e.g., stops at 80%, resumes at 70%) to avoid rapid, wear-inducing charge cycles.
@@ -59,7 +59,7 @@ Important Note: You must flash the modded EC firmware for hysteresis control to 
 
 You can try manually patch official firmware (provided strictly as-is, with no warranty):
 
-[patch script](https://github.com/minortex/ec_reverse/tree/main/firmware_mods)
+[tutorial](https://github.com/minortex/ec_reverse)
 
 ## Config
 

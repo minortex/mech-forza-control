@@ -262,11 +262,10 @@ sudo uv run tools/ec_rw.py read <high> <low>      # 读两个字节并合并
 sudo uv run tools/ec_rw.py write <addr> <value>   # 写一个字节
 sudo uv run tools/ec_rw.py dump <start> <count>   # dump 范围
 
-# I2EC 专用通道，可访问 H2RAM 看不见的 0x0800–0x0BFF
-sudo uv run tools/i2ec_rw.py read <addr>
-
-# SPI Flash 整片读写（C 实现，另见 docs/ec-flash-and-i2ec-rw-20261103.md）
-make -C tools/ec-flash && sudo build/ec-flash --help
+# I2EC 专用通道与 SPI Flash 整片读写工具在 ec_reverse 仓库：
+# https://github.com/minortex/ec_reverse
+#   tools/i2ec_rw.py   访问 H2RAM 看不见的 0x0800–0x0BFF
+#   tools/ec-flash/    SPI Flash 整片读写（C 实现）
 ```
 
 ---
