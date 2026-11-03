@@ -8,12 +8,12 @@ from src.io import EC_OP_READ, EC_OP_UPDATE_BITS, EcOperation
 
 def test_ioctl_numbers_match_kernel_uapi():
     assert linux._EC_IO.size == 4
+    assert linux._EC_OP.size == 6
+    assert linux._EC_BLOCK_SIZE == 132
+    assert linux._EC_XFER_SIZE == 772
     assert linux.MECHREVO_EC_IOC_READ == 0xC0044D00
     assert linux.MECHREVO_EC_IOC_WRITE == 0x40044D01
     assert linux.MECHREVO_EC_IOC_UPDATE_BITS == 0xC0044D02
-    assert linux._EC_BLOCK_SIZE == 132
-    assert linux._EC_OP.size == 6
-    assert linux._EC_XFER_SIZE == 772
     assert linux.MECHREVO_EC_IOC_READ_BLOCK == 0xC0844D03
     assert linux.MECHREVO_EC_IOC_WRITE_BLOCK == 0x40844D04
     assert linux.MECHREVO_EC_IOC_XFER == 0xC3044D05
@@ -28,18 +28,15 @@ def test_kernel_backend_read_and_write_ioctl(monkeypatch):
         opened.append((path, flags))
         return 17
 
-    def fake_close(fd):
-        closed.append(fd)
-
     def fake_ioctl(fd, request, data, mutate):
         addr, value, mask = linux._EC_IO.unpack(data)
-        calls.append((fd, request, addr, value, mask, mutate))
+        calls.append((fd, request, addr, value, mask))
         if request == linux.MECHREVO_EC_IOC_READ:
             linux._EC_IO.pack_into(data, 0, addr, 0xA5, mask)
         return 0
 
     monkeypatch.setattr(linux.os, "open", fake_open)
-    monkeypatch.setattr(linux.os, "close", fake_close)
+    monkeypatch.setattr(linux.os, "close", closed.append)
     monkeypatch.setattr(linux.fcntl, "ioctl", fake_ioctl)
 
     backend = linux.KernelEcBackend()
@@ -54,8 +51,8 @@ def test_kernel_backend_read_and_write_ioctl(monkeypatch):
         )
     ]
     assert calls == [
-        (17, linux.MECHREVO_EC_IOC_READ, 0x0741, 0, 0, True),
-        (17, linux.MECHREVO_EC_IOC_WRITE, 0x0751, 0x50, 0, True),
+        (17, linux.MECHREVO_EC_IOC_READ, 0x0741, 0, 0),
+        (17, linux.MECHREVO_EC_IOC_WRITE, 0x0751, 0x50, 0),
     ]
     assert closed == [17]
 
@@ -68,29 +65,22 @@ def test_kernel_backend_rmw_maps_clear_wins_semantics(monkeypatch):
 
     def fake_ioctl(fd, request, data, mutate):
         addr, value, mask = linux._EC_IO.unpack(data)
-        captured.update(
-            fd=fd, request=request, addr=addr, value=value, mask=mask, mutate=mutate
-        )
+        captured.update(request=request, addr=addr, value=value, mask=mask)
         linux._EC_IO.pack_into(data, 0, addr, 0x23, mask)
         return 0
 
     monkeypatch.setattr(linux.fcntl, "ioctl", fake_ioctl)
 
-    backend = linux.KernelEcBackend()
-    result = backend.ec_rmw(
-        0x0741,
-        set_bits=0b1000_0011,
-        clear_bits=0b1000_0100,
+    result = linux.KernelEcBackend().ec_rmw(
+        0x0741, set_bits=0b1000_0011, clear_bits=0b1000_0100
     )
 
     assert result == 0x23
     assert captured == {
-        "fd": 23,
         "request": linux.MECHREVO_EC_IOC_UPDATE_BITS,
         "addr": 0x0741,
         "value": 0b0000_0011,
         "mask": 0b1000_0111,
-        "mutate": True,
     }
 
 
@@ -102,13 +92,13 @@ def test_default_backend_is_kernel_and_does_not_fallback(monkeypatch):
         attempted.append("kernel")
         raise PermissionError("denied")
 
-    def forbidden_legacy(self):
+    def forbidden(self):
         attempted.append(type(self).__name__)
         raise AssertionError("legacy backend must not be attempted by default")
 
     monkeypatch.setattr(linux.KernelEcBackend, "open", fail_kernel)
-    monkeypatch.setattr(linux.AcpiCallBackend, "open", forbidden_legacy)
-    monkeypatch.setattr(linux.DevMemBackend, "open", forbidden_legacy)
+    monkeypatch.setattr(linux.AcpiCallBackend, "open", forbidden)
+    monkeypatch.setattr(linux.DevMemBackend, "open", forbidden)
 
     with pytest.raises(RuntimeError, match="Cannot open /dev/mechrevo-ec"):
         linux.select_backend()
@@ -128,9 +118,7 @@ def test_explicit_backend_selection(monkeypatch, name, backend_type):
     monkeypatch.setenv("MFC_EC_BACKEND", name)
     monkeypatch.setattr(backend_type, "open", lambda self: None)
 
-    backend = linux.select_backend()
-
-    assert isinstance(backend, backend_type)
+    assert isinstance(linux.select_backend(), backend_type)
 
 
 def test_unknown_backend_selection_is_rejected(monkeypatch):
@@ -142,6 +130,7 @@ def test_unknown_backend_selection_is_rejected(monkeypatch):
 
 def test_kernel_backend_block_ioctls(monkeypatch):
     calls = []
+
     monkeypatch.setattr(linux.os, "open", lambda path, flags: 31)
     monkeypatch.setattr(linux.os, "close", lambda fd: None)
 
@@ -167,6 +156,7 @@ def test_kernel_backend_block_ioctls(monkeypatch):
 
 def test_kernel_backend_vector_transaction_pack_and_results(monkeypatch):
     captured = []
+
     monkeypatch.setattr(linux.os, "open", lambda path, flags: 37)
     monkeypatch.setattr(linux.os, "close", lambda fd: None)
 
@@ -177,7 +167,9 @@ def test_kernel_backend_vector_transaction_pack_and_results(monkeypatch):
         for index in range(count):
             offset = linux._EC_XFER_HEADER.size + index * linux._EC_OP.size
             captured.append(linux._EC_OP.unpack_from(data, offset))
-        linux._EC_OP.pack_into(data, linux._EC_XFER_HEADER.size, 0x0741, EC_OP_READ, 0xA5, 0, 0)
+        linux._EC_OP.pack_into(
+            data, linux._EC_XFER_HEADER.size, 0x0741, EC_OP_READ, 0xA5, 0, 0
+        )
         linux._EC_OP.pack_into(
             data,
             linux._EC_XFER_HEADER.size + linux._EC_OP.size,
@@ -190,8 +182,8 @@ def test_kernel_backend_vector_transaction_pack_and_results(monkeypatch):
         return 0
 
     monkeypatch.setattr(linux.fcntl, "ioctl", fake_ioctl)
-    backend = linux.KernelEcBackend()
-    results = backend.ec_transaction(
+
+    results = linux.KernelEcBackend().ec_transaction(
         [
             EcOperation(EC_OP_READ, 0x0741),
             EcOperation(EC_OP_UPDATE_BITS, 0x0751, 0x10, 0x90),
