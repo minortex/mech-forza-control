@@ -1,6 +1,6 @@
 # Maintainer: minortex <texsd dot tt29 at outlook dot com>
 pkgname=mech-forza-control-git
-pkgver=0.2.0.r0.gf3ec97d
+pkgver=0.2.0.r1.g3a8df18
 pkgrel=1
 pkgdesc="Mechrevo notebook EC direct control CLI (MFC) — power mode, fan curve, keyboard backlight"
 arch=('any')
