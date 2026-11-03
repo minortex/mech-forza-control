@@ -253,25 +253,20 @@ AC 连接、电池温度和硬件保护条件。
 
 ## 工具脚本 (`tools/`)
 
-独立脚本，不通过 `ec` 入口调用：
+独立脚本，不通过 `mfc` 入口调用：
 
 ```bash
-# 底层 EC 字节读写（调试用）
-sudo uv run tools/ec_rw.py <addr>              # 读
-sudo uv run tools/ec_rw.py <addr> <value>      # 写
-sudo uv run tools/ec_rw.py <start> <end>       # dump 范围
+# 底层 EC 字节读写（/dev/mechrevo-ec 同款 H2RAM 窗口）
+sudo uv run tools/ec_rw.py read <addr>            # 读一个字节
+sudo uv run tools/ec_rw.py read <high> <low>      # 读两个字节并合并
+sudo uv run tools/ec_rw.py write <addr> <value>   # 写一个字节
+sudo uv run tools/ec_rw.py dump <start> <count>   # dump 范围
 
-# EC 寄存器批量探测
-sudo uv run tools/ec_probe.py
+# I2EC 专用通道，可访问 H2RAM 看不见的 0x0800–0x0BFF
+sudo uv run tools/i2ec_rw.py read <addr>
 
-# 模式切换早期独立脚本
-sudo python tools/switch_mode.py
-
-# MQTT 消息发送（模拟官方 GCU Service）
-python tools/mqtt_pub.py
-
-# MQTT 消息抓包（监听官方控制台通信）
-python tools/mqtt_sniff.py
+# SPI Flash 整片读写（C 实现，另见 docs/ec-flash-and-i2ec-rw-20261103.md）
+make -C tools/ec-flash && sudo build/ec-flash --help
 ```
 
 ---
@@ -279,9 +274,9 @@ python tools/mqtt_sniff.py
 ## 开发 / 测试
 
 ```bash
-# 测试（无需硬件，mock 读写）
+# 测试（无需硬件，mock 读写；conftest.py 关闭 .pyc 写入，加 -B 可连自身也不写）
 uv run pytest
 
 # 语法检查
-uv run python -m compileall src/ec
+uv run python -m compileall src
 ```
