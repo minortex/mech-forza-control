@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from src.backends.base import EcBackend
-from src.registers import EC_MMIO_MAX, EC_MMIO_MIN
+from src.registers import ADDR_AP_OEM, EC_MMIO_MAX, EC_MMIO_MIN
 
 EC_OP_READ = 0
 EC_OP_WRITE = 1
@@ -81,10 +81,6 @@ def _check_byte(value: int, label: str = "value") -> None:
         raise ValueError(f"EC {label} {value} out of range")
 
 
-def open_ec() -> None:
-    _get_backend().open()
-
-
 def close() -> None:
     global _BACKEND
     if _BACKEND is not None:
@@ -104,6 +100,20 @@ def ec_write(addr: int, value: int) -> None:
     _check_addr(addr)
     _check_byte(value)
     _get_backend().ec_write(addr, value)
+
+
+def ensure_ap_exist() -> int | None:
+    """Set the EC ApExistFlag (XRAM[0x0741].bit0) when it is clear.
+
+    Returns the previous register value when it had to be changed, else None.
+    The official GCU Service sets this on startup; without it the EC ignores
+    some register writes.
+    """
+    old = ec_read(ADDR_AP_OEM)
+    if old & 0x01:
+        return None
+    ec_write(ADDR_AP_OEM, old | 0x01)
+    return old
 
 
 def ec_read_block(addr: int, length: int) -> bytes:

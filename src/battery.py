@@ -9,7 +9,15 @@ import argparse
 import os
 import textwrap
 
-from .io import EC_OP_WRITE, EcOperation, ec_read, ec_read_word, ec_read_word_be, ec_transaction, ec_write
+from .io import (
+    EC_OP_WRITE,
+    EcOperation,
+    ec_read,
+    ec_read_word,
+    ec_read_word_be,
+    ec_transaction,
+    ensure_ap_exist,
+)
 from .registers import (
     ADDR_AP_OEM,
     ADDR_BATTERY_BASE_VOLTAGE,
@@ -28,18 +36,6 @@ from .registers import (
 LIMIT_MASK = 0x7F
 FLAG_BIT = 0x80
 
-BAT_HELP = textwrap.dedent(
-    """    Battery charge threshold control.
-
-    Upper-threshold support may need separate enablement first:
-      - run the w568 script, or
-      - flash a supported BIOS/firmware and enable charge limit in BIOS.
-
-    Lower-threshold hysteresis (-d/--down with -u/--up) requires compatible EC
-    firmware. On stock EC firmware the register writes may succeed, but the
-    charging behavior may stay unchanged.
-    """
-)
 
 SET_HELP = textwrap.dedent(
     """    Configure battery charge thresholds.
@@ -64,10 +60,9 @@ SET_EPILOG = textwrap.dedent(
 
 
 def _ensure_ap_exist():
-    v = ec_read(ADDR_AP_OEM)
-    if not (v & 1):
-        ec_write(ADDR_AP_OEM, v | 1)
-        print(f"  XRAM[0x{ADDR_AP_OEM:04X}] ApExistFlag: 0x{v:02x} -> set bit0=1")
+    old = ensure_ap_exist()
+    if old is not None:
+        print(f"  XRAM[0x{ADDR_AP_OEM:04X}] ApExistFlag: 0x{old:02x} -> set bit0=1")
 
 
 def _parse_int(value, *, label):
@@ -95,77 +90,59 @@ def lower_type(value):
     return limit
 
 
+def _capacity(raw, unit):
+    if unit == "mAh":
+        return f"{int(raw) / 1000:.0f} mAh"
+    return f"{int(raw) / 1_000_000:.3f} Wh"
+
+
+def _read_attr(bat_dir, filename):
+    path = os.path.join(bat_dir, filename)
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        return f.read().strip()
+
+
 def _get_sysfs_battery_info():
     info = []
     base_path = "/sys/class/power_supply"
     if not os.path.exists(base_path):
         return info
 
-    try:
-        for name in os.listdir(base_path):
-            if not name.startswith("BAT"):
-                continue
-            bat_dir = os.path.join(base_path, name)
+    for name in os.listdir(base_path):
+        if not name.startswith("BAT"):
+            continue
+        bat_dir = os.path.join(base_path, name)
 
-            def read_val(filename):
-                path = os.path.join(bat_dir, filename)
-                if os.path.exists(path):
-                    with open(path, "r") as f:
-                        return f.read().strip()
-                return None
+        charge_now = _read_attr(bat_dir, "charge_now")
+        charge_full = _read_attr(bat_dir, "charge_full")
+        charge_design = _read_attr(bat_dir, "charge_full_design")
+        unit = "mAh"
 
-            status = read_val("status")
-            capacity = read_val("capacity")
+        if charge_now is None:
+            charge_now = _read_attr(bat_dir, "energy_now")
+            charge_full = _read_attr(bat_dir, "energy_full")
+            charge_design = _read_attr(bat_dir, "energy_full_design")
+            unit = "Wh"
 
-            charge_now = read_val("charge_now")
-            charge_full = read_val("charge_full")
-            charge_design = read_val("charge_full_design")
-            unit = "mAh"
+        bat_info = {
+            "name": name,
+            "status": _read_attr(bat_dir, "status"),
+            "capacity": _read_attr(bat_dir, "capacity"),
+        }
+        if charge_now and charge_full:
+            try:
+                bat_info["charge_now"] = _capacity(charge_now, unit)
+                bat_info["charge_full"] = _capacity(charge_full, unit)
+                if charge_design and int(charge_design) > 0:
+                    bat_info["charge_design"] = _capacity(charge_design, unit)
+                    health = int(charge_full) / int(charge_design) * 100
+                    bat_info["health"] = f"{health:.1f}%"
+            except ValueError:
+                pass
 
-            if charge_now is None:
-                charge_now = read_val("energy_now")
-                charge_full = read_val("energy_full")
-                charge_design = read_val("energy_full_design")
-                unit = "Wh"
-
-            bat_info = {
-                "name": name,
-                "status": status,
-                "capacity": capacity,
-            }
-
-            if charge_now and charge_full:
-                try:
-                    if unit == "mAh":
-                        now_val = int(charge_now) / 1000.0
-                        full_val = int(charge_full) / 1000.0
-                        bat_info["charge_now"] = f"{now_val:.0f} {unit}"
-                        bat_info["charge_full"] = f"{full_val:.0f} {unit}"
-
-                        if charge_design:
-                            design_val = int(charge_design) / 1000.0
-                            bat_info["charge_design"] = f"{design_val:.0f} {unit}"
-                            if design_val > 0:
-                                health = (full_val / design_val) * 100
-                                bat_info["health"] = f"{health:.1f}%"
-                    else:
-                        now_val = int(charge_now) / 1000000.0
-                        full_val = int(charge_full) / 1000000.0
-                        bat_info["charge_now"] = f"{now_val:.3f} {unit}"
-                        bat_info["charge_full"] = f"{full_val:.3f} {unit}"
-
-                        if charge_design:
-                            design_val = int(charge_design) / 1000000.0
-                            bat_info["charge_design"] = f"{design_val:.3f} {unit}"
-                            if design_val > 0:
-                                health = (full_val / design_val) * 100
-                                bat_info["health"] = f"{health:.1f}%"
-                except ValueError:
-                    pass
-
-            info.append(bat_info)
-    except Exception:
-        pass
+        info.append(bat_info)
     return info
 
 
@@ -196,12 +173,20 @@ def _read_state():
     }
 
 
+def _hysteresis_window(state):
+    return (
+        1 <= state["low"] <= 95
+        and 1 <= state["high"] <= 99
+        and state["low"] < state["high"]
+    )
+
+
 def _describe_mode(state):
     if state["low"] == 0 and state["high"] == 0:
         return "unrestricted; charging is allowed to 100%"
     if state["low"] == 0:
         return "stock upper-only behavior (lower hysteresis disabled)"
-    if not (1 <= state["low"] <= 95 and 1 <= state["high"] <= 99 and state["low"] < state["high"]):
+    if not _hysteresis_window(state):
         return "invalid lower/upper pair; v2.2 treats it as disabled/unrestricted"
     if state["rsoc"] <= state["low"]:
         return "lower reached: a charge cycle should be active"
@@ -213,7 +198,7 @@ def _describe_mode(state):
 
 
 def _convergence_warning(state):
-    if not (1 <= state["low"] <= 95 and 1 <= state["high"] <= 99 and state["low"] < state["high"]):
+    if not _hysteresis_window(state):
         return None
 
     expected_stopped = not state["cycle_active"]
@@ -398,7 +383,7 @@ def register(subparsers):
     bat = subparsers.add_parser(
         "bat",
         help="Battery charge threshold control",
-        description=BAT_HELP,
+        description=__doc__,
         epilog="Command names and named values accept unambiguous prefixes.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

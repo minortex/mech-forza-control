@@ -63,12 +63,8 @@ def cmd_level(args):
 
 def cmd_cycle(args):
     cur = _get_level()
-    try:
-        idx = BACKLIGHT_CYCLE.index(cur)
-    except ValueError:
-        idx = -1
-    nxt = BACKLIGHT_CYCLE[(idx + 1) % len(BACKLIGHT_CYCLE)]
-    _set_level(nxt)
+    idx = BACKLIGHT_CYCLE.index(cur) if cur in BACKLIGHT_CYCLE else -1
+    _set_level(BACKLIGHT_CYCLE[(idx + 1) % len(BACKLIGHT_CYCLE)])
 
 
 def register(subparsers):

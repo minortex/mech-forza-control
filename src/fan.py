@@ -38,8 +38,6 @@ from .io import (
     EC_OP_WRITE,
     EcOperation,
     ec_read,
-    ec_read_block,
-    ec_rmw,
     ec_transaction,
     ec_write,
 )
@@ -118,10 +116,6 @@ def _decode_control_state(values):
     }
 
 
-def _read_control_state():
-    return _decode_control_state(_read_registers(_CONTROL_ADDRS))
-
-
 _NON_FAN_OVERRIDES = (
     (ADDR_PL1, "PL1"),
     (ADDR_PL2, "PL2"),
@@ -132,6 +126,10 @@ _NON_FAN_OVERRIDES = (
 
 def _update_op(addr, mask, value):
     return EcOperation(EC_OP_UPDATE_BITS, addr, value, mask)
+
+
+def _relationship_op(enabled):
+    return _update_op(ADDR_FANCTL_RESP, 0x80, 0x80 if enabled else 0)
 
 
 def _append_clear_override_ops(operations):
@@ -164,6 +162,18 @@ def _append_control_reads(operations):
 def _control_state_from_results(results, start):
     values = dict(zip(_CONTROL_ADDRS, results[start : start + len(_CONTROL_ADDRS)]))
     return _decode_control_state(values)
+
+
+def _append_enable_table(operations):
+    """Append the confirmed gate writes; return the control-read offset."""
+    operations.extend(
+        (
+            _update_op(ADDR_AP_OEM, 0x01, 0x01),
+            _update_op(ADDR_AP_OEM10, 0x40, 0x40),
+            _update_op(ADDR_AP_CTL, 0x04, 0x04),
+        )
+    )
+    return _append_control_reads(operations)
 
 
 def _format_gate_bits(state):
@@ -202,18 +212,6 @@ def _decode_runtime(values):
 def _read_fan_snapshot():
     values = _read_registers(_RUNTIME_ADDRS + _CONTROL_ADDRS)
     return _decode_runtime(values), _decode_control_state(values)
-
-
-def _read():
-    return _decode_runtime(_read_registers(_RUNTIME_ADDRS))
-
-
-def _read_curve(up_base, down_base, duty_base):
-    return {
-        "up": list(ec_read_block(up_base, 16)),
-        "down": list(ec_read_block(down_base, 16)),
-        "duty": list(ec_read_block(duty_base, 16)),
-    }
 
 
 def _format_temperature(value):
@@ -430,28 +428,12 @@ def cmd_switch_speed(args):
 
 
 def _set_independent_gate(enabled):
-    value = ec_transaction(
-        (
-            _update_op(
-                ADDR_FANCTL_RESP,
-                0x80,
-                0x80 if enabled else 0,
-            ),
-        )
-    )[0]
+    value = ec_transaction((_relationship_op(enabled),))[0]
     relationship = "independent" if enabled else "linked"
     print(
         f"  Fan relationship: {relationship} "
         f"(XRAM[0x{ADDR_FANCTL_RESP:04X}].bit7={int(enabled)}, value=0x{value:02x})"
     )
-
-
-def _clear_non_fan_overrides():
-    """Neutralize AP Custom inputs that must not be activated by fan control."""
-    operations = []
-    result_indexes = _append_clear_override_ops(operations)
-    results = ec_transaction(operations)
-    _report_cleared_overrides(results, result_indexes)
 
 
 def _enable_ap_fan_control(clear_overrides=True):
@@ -462,14 +444,7 @@ def _enable_ap_fan_control(clear_overrides=True):
     override_indexes = (
         _append_clear_override_ops(operations) if clear_overrides else []
     )
-    operations.extend(
-        (
-            _update_op(ADDR_AP_OEM, 0x01, 0x01),
-            _update_op(ADDR_AP_OEM10, 0x40, 0x40),
-            _update_op(ADDR_AP_CTL, 0x04, 0x04),
-        )
-    )
-    state_start = _append_control_reads(operations)
+    state_start = _append_enable_table(operations)
     results = ec_transaction(operations)
     if clear_overrides:
         _report_cleared_overrides(results, override_indexes)
@@ -575,40 +550,24 @@ def cmd_set(args):
     # re-enable lookup or observe a partially written fixed-duty table.
     operations = [_update_op(ADDR_AP_CTL, 0x04, 0)]
     override_indexes = _append_clear_override_ops(operations)
+    targets = (
+        ("CPU", cpu_pct, ADDR_CPU_FAN_DUTY_BASE),
+        ("GPU", gpu_pct, ADDR_GPU_FAN_DUTY_BASE),
+    )
     duty_readbacks = []
-    for pct, base in (
-        (cpu_pct, ADDR_CPU_FAN_DUTY_BASE),
-        (gpu_pct, ADDR_GPU_FAN_DUTY_BASE),
-    ):
-        duty = pct * 2
+    for _, pct, base in targets:
         operations.extend(
-            EcOperation(EC_OP_WRITE, base + i, duty) for i in range(16)
+            EcOperation(EC_OP_WRITE, base + i, pct * 2) for i in range(16)
         )
         duty_readbacks.append(len(operations))
         operations.append(EcOperation(EC_OP_READ, base))
     relationship_index = len(operations)
-    operations.append(
-        _update_op(
-            ADDR_FANCTL_RESP,
-            0x80,
-            0x80 if enable_independent else 0,
-        )
-    )
-    operations.extend(
-        (
-            _update_op(ADDR_AP_OEM, 0x01, 0x01),
-            _update_op(ADDR_AP_OEM10, 0x40, 0x40),
-            _update_op(ADDR_AP_CTL, 0x04, 0x04),
-        )
-    )
-    state_start = _append_control_reads(operations)
+    operations.append(_relationship_op(enable_independent))
+    state_start = _append_enable_table(operations)
     results = ec_transaction(operations)
 
     _report_cleared_overrides(results, override_indexes)
-    for pct, label, base, result_index in (
-        (cpu_pct, "CPU", ADDR_CPU_FAN_DUTY_BASE, duty_readbacks[0]),
-        (gpu_pct, "GPU", ADDR_GPU_FAN_DUTY_BASE, duty_readbacks[1]),
-    ):
+    for (label, pct, base), result_index in zip(targets, duty_readbacks):
         duty = pct * 2
         first = results[result_index]
         print(f"  {label} fan duty: all 16 points set to {pct}% (EC value 0x{duty:02x})")
@@ -657,14 +616,7 @@ def cmd_default(args):
         ADDR_GPU_FAN_DUTY_BASE,
         profile.second,
     )
-    operations.extend(
-        (
-            _update_op(ADDR_AP_OEM, 0x01, 0x01),
-            _update_op(ADDR_AP_OEM10, 0x40, 0x40),
-            _update_op(ADDR_AP_CTL, 0x04, 0x04),
-        )
-    )
-    state_start = _append_control_reads(operations)
+    state_start = _append_enable_table(operations)
     results = ec_transaction(operations)
 
     _report_cleared_overrides(results, override_indexes)
